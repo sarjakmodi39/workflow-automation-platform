@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createMemoryStore } from "@/lib/engine/store.memory";
+import { ConflictError, NotFoundError } from "@/lib/errors";
 import type { WorkflowVersionRecord } from "@/lib/types";
 
 const version: WorkflowVersionRecord = {
@@ -143,5 +144,91 @@ describe("MemoryRunStore", () => {
     });
     expect(second.created).toBe(false);
     expect(second.record.response).toEqual({ ref: "EXT-1" });
+  });
+
+  it("updates only the patched fields on a run and advances updatedAt", async () => {
+    const store = createMemoryStore({ versions: [version] });
+    const run = await store.createRun({ workflowVersionId: "wv1", input: {} });
+    const before = run.updatedAt.getTime();
+
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const updated = await store.updateRun(run.id, { status: "RUNNING" });
+
+    expect(updated.status).toBe("RUNNING");
+    expect(updated.cursor).toBeNull();
+    expect(updated.error).toBeNull();
+    expect(updated.updatedAt.getTime()).toBeGreaterThan(before);
+
+    const cursored = await store.updateRun(run.id, { cursor: "step-2" });
+    expect(cursored.status).toBe("RUNNING");
+    expect(cursored.cursor).toBe("step-2");
+
+    await expect(
+      store.updateRun("missing", { status: "FAILED" }),
+    ).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it("round-trips an approval decision and rejects a second decision for the same step", async () => {
+    const store = createMemoryStore({ versions: [version] });
+    const run = await store.createRun({ workflowVersionId: "wv1", input: {} });
+    const step = await store.createStepExecution({
+      runId: run.id,
+      stepId: "approve-me",
+      stepType: "human_approval",
+      status: "AWAITING_APPROVAL",
+      attempt: 1,
+      retrySafe: false,
+      input: {},
+    });
+
+    expect(await store.getApproval(step.id)).toBeNull();
+
+    const approval = await store.createApproval(step.id, "APPROVED", null);
+    expect(approval.decision).toBe("APPROVED");
+    expect(approval.reason).toBeNull();
+    expect(approval.stepExecutionId).toBe(step.id);
+
+    const fetched = await store.getApproval(step.id);
+    expect(fetched).toEqual(approval);
+
+    await expect(
+      store.createApproval(step.id, "REJECTED", "changed my mind"),
+    ).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it("lists LLM calls for a run in order, empty when none recorded", async () => {
+    const store = createMemoryStore({ versions: [version] });
+    const run = await store.createRun({ workflowVersionId: "wv1", input: {} });
+
+    expect(await store.listLlmCalls(run.id)).toEqual([]);
+
+    const first = await store.recordLlmCall({
+      runId: run.id,
+      provider: "mock",
+      model: "mock-1",
+      prompt: "p1",
+      response: "r1",
+      inputTokens: 1,
+      outputTokens: 1,
+      latencyMs: 5,
+      status: "SUCCESS",
+      error: null,
+    });
+    const second = await store.recordLlmCall({
+      runId: run.id,
+      provider: "mock",
+      model: "mock-1",
+      prompt: "p2",
+      response: "r2",
+      inputTokens: 2,
+      outputTokens: 2,
+      latencyMs: 6,
+      status: "SUCCESS",
+      error: null,
+    });
+
+    const calls = await store.listLlmCalls(run.id);
+    expect(calls.map((c) => c.id)).toEqual([first.id, second.id]);
+    expect(calls.map((c) => c.prompt)).toEqual(["p1", "p2"]);
   });
 });

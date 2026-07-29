@@ -1,4 +1,4 @@
-import { NotFoundError } from "@/lib/errors";
+import { ConflictError, NotFoundError } from "@/lib/errors";
 import type {
   AppendAuditInput,
   CreateRunInput,
@@ -93,6 +93,9 @@ export class MemoryRunStore implements RunStore {
     return true;
   }
 
+  // Deliberately asymmetric with acquireLock: release is idempotent, so a
+  // missing run (or a token mismatch) is a silent no-op rather than a
+  // NotFoundError. Task 12's Prisma implementation must reproduce this.
   async releaseLock(runId: string, token: string): Promise<void> {
     const run = this.runs.get(runId);
     if (!run) return;
@@ -141,11 +144,22 @@ export class MemoryRunStore implements RunStore {
     return { ...record };
   }
 
+  /**
+   * Mirrors the `@unique` constraint on `Approval.stepExecutionId` in
+   * prisma/schema.prisma. A step execution may be decided once; a second
+   * call must fail loudly here exactly as it will fail with P2002 against
+   * Postgres, rather than silently overwriting the first decision.
+   */
   async createApproval(
     stepExecutionId: string,
     decision: "APPROVED" | "REJECTED",
     reason: string | null,
   ): Promise<ApprovalRecord> {
+    if (this.approvals.has(stepExecutionId)) {
+      throw new ConflictError(
+        `Approval already recorded for step execution ${stepExecutionId}`,
+      );
+    }
     const record: ApprovalRecord = {
       id: nextId("appr"),
       stepExecutionId,
