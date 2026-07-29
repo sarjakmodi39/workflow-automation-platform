@@ -7,6 +7,7 @@ const ctx: ExecutionContext = {
   steps: {
     extract: { amount: 5200, vendor: "Acme", tags: ["urgent", "eu"] },
     classify: { label: "high_risk" },
+    limits: { amount: 5000 },
   },
 };
 
@@ -103,5 +104,55 @@ describe("evaluateCondition", () => {
       ctx,
     );
     expect(r.result).toBe(false);
+  });
+
+  it("resolves a right-hand context path and records both paths in resolvedInputs", () => {
+    const r = evaluateCondition(
+      { left: "$.steps.extract.amount", op: "gt", right: "$.steps.limits.amount" },
+      ctx,
+    );
+    expect(r.result).toBe(true);
+    expect(r.resolvedInputs["$.steps.extract.amount"]).toBe(5200);
+    expect(r.resolvedInputs["$.steps.limits.amount"]).toBe(5000);
+  });
+
+  it("returns false for a numeric comparator against a non-numeric operand", () => {
+    const r = evaluateCondition(
+      { left: "$.steps.extract.vendor", op: "gt", right: 100 },
+      ctx,
+    );
+    expect(r.result).toBe(false);
+  });
+
+  it("evaluates a less-than comparator", () => {
+    const r = evaluateCondition(
+      { left: "$.steps.extract.amount", op: "lt", right: 6000 },
+      ctx,
+    );
+    expect(r.result).toBe(true);
+  });
+
+  it("evaluates a less-than-or-equal comparator", () => {
+    const r = evaluateCondition(
+      { left: "$.steps.extract.amount", op: "lte", right: 5200 },
+      ctx,
+    );
+    expect(r.result).toBe(true);
+  });
+
+  it("evaluates a greater-than-or-equal comparator", () => {
+    const r = evaluateCondition(
+      { left: "$.steps.extract.amount", op: "gte", right: 5200 },
+      ctx,
+    );
+    expect(r.result).toBe(true);
+  });
+
+  it("evaluates a not-equal comparator", () => {
+    const r = evaluateCondition(
+      { left: "$.steps.classify.label", op: "neq", right: "low_risk" },
+      ctx,
+    );
+    expect(r.result).toBe(true);
   });
 });
