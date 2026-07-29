@@ -76,8 +76,18 @@ describe("step registry", () => {
 
   it("accepts a valid classification config", () => {
     expect(
-      REGISTRY.ai_classification.validateConfig({ labels: ["low", "high"] }),
+      REGISTRY.ai_classification.validateConfig({
+        source: "$.steps.retrieve.documents",
+        labels: ["low", "high"],
+      }),
     ).toEqual([]);
+  });
+
+  it("reports a config error when classification has no source path", () => {
+    const errors = REGISTRY.ai_classification.validateConfig({
+      labels: ["low", "high"],
+    });
+    expect(errors.length).toBeGreaterThan(0);
   });
 
   it("throws a ValidationError for an unknown step type", () => {

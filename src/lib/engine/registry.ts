@@ -131,6 +131,9 @@ export const REGISTRY: Record<StepType, StepTypeSpec> = {
       if (labels.length < 2) {
         errors.push("AI classification needs at least two labels.");
       }
+      if (typeof config.source !== "string" || config.source.length === 0) {
+        errors.push("AI classification needs a source path.");
+      }
       return errors;
     },
   },
