@@ -145,3 +145,20 @@ export interface ExternalActionRecord {
   response: unknown;
   createdAt: Date;
 }
+
+export interface WorkflowVersionRecord {
+  id: string;
+  workflowId: string;
+  version: number;
+  definition: WorkflowDefinition;
+  grantedPermissions: string[];
+  createdAt: Date;
+}
+
+export interface ApprovalRecord {
+  id: string;
+  stepExecutionId: string;
+  decision: "APPROVED" | "REJECTED";
+  reason: string | null;
+  decidedAt: Date;
+}
