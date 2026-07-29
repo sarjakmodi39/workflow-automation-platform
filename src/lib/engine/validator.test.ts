@@ -147,4 +147,29 @@ describe("validateWorkflow", () => {
     const issues = validateWorkflow(def, GRANTS);
     expect(issues.some((i) => i.code === "MISSING_CONDITION")).toBe(true);
   });
+
+  it("rejects a condition step whose branch targets itself", () => {
+    const def = validDefinition();
+    def.steps.splice(2, 0, {
+      id: "check",
+      type: "deterministic_condition",
+      name: "Check",
+      config: {},
+      condition: { left: "$.steps.extract.amount", op: "gt", right: 100 },
+      onTrue: "check",
+      onFalse: "report",
+    });
+    const issues = validateWorkflow(def, GRANTS);
+    expect(issues.some((i) => i.code === "BACKWARD_BRANCH")).toBe(true);
+  });
+
+  it("rejects a step whose config references its own output", () => {
+    const def = validDefinition();
+    def.steps[1].config = {
+      source: "$.steps.extract.amount",
+      fields: [{ name: "amount", kind: "number" }],
+    };
+    const issues = validateWorkflow(def, GRANTS);
+    expect(issues.some((i) => i.code === "FORWARD_SOURCE_REFERENCE")).toBe(true);
+  });
 });
