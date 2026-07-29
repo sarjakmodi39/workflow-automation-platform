@@ -1,0 +1,164 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RunStatus {
+  PENDING
+  RUNNING
+  AWAITING_APPROVAL
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum StepStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED
+  SKIPPED
+  AWAITING_APPROVAL
+  CANCELLED
+}
+
+enum ApprovalDecision {
+  APPROVED
+  REJECTED
+}
+
+enum LlmCallStatus {
+  SUCCESS
+  ERROR
+}
+
+model Workflow {
+  id        String            @id @default(cuid())
+  name      String
+  createdAt DateTime          @default(now())
+  versions  WorkflowVersion[]
+}
+
+model WorkflowVersion {
+  id                 String   @id @default(cuid())
+  workflowId         String
+  version            Int
+  definition         Json
+  grantedPermissions Json
+  createdAt          DateTime @default(now())
+
+  workflow Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  runs     Run[]
+
+  @@unique([workflowId, version])
+  @@index([workflowId])
+}
+
+model Run {
+  id                String    @id @default(cuid())
+  workflowVersionId String
+  status            RunStatus @default(PENDING)
+  input             Json
+  cursor            String?
+  lockToken         String?
+  lockedUntil       DateTime?
+  error             String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  workflowVersion  WorkflowVersion  @relation(fields: [workflowVersionId], references: [id], onDelete: Cascade)
+  stepExecutions   StepExecution[]
+  auditEvents      AuditEvent[]
+  llmCalls         LlmCall[]
+  externalActions  ExternalAction[]
+
+  @@index([workflowVersionId])
+  @@index([status])
+}
+
+model StepExecution {
+  id          String     @id @default(cuid())
+  runId       String
+  stepId      String
+  stepType    String
+  status      StepStatus @default(PENDING)
+  attempt     Int        @default(1)
+  retrySafe   Boolean    @default(true)
+  input       Json?
+  output      Json?
+  explanation Json?
+  error       String?
+  startedAt   DateTime?
+  finishedAt  DateTime?
+
+  run         Run          @relation(fields: [runId], references: [id], onDelete: Cascade)
+  approval    Approval?
+  llmCalls    LlmCall[]
+  auditEvents AuditEvent[]
+
+  @@index([runId])
+  @@unique([runId, stepId, attempt])
+}
+
+model Approval {
+  id              String           @id @default(cuid())
+  stepExecutionId String           @unique
+  decision        ApprovalDecision
+  reason          String?
+  decidedAt       DateTime         @default(now())
+
+  stepExecution StepExecution @relation(fields: [stepExecutionId], references: [id], onDelete: Cascade)
+}
+
+model LlmCall {
+  id              String        @id @default(cuid())
+  runId           String
+  stepExecutionId String?
+  provider        String
+  model           String
+  prompt          String
+  response        String?
+  inputTokens     Int?
+  outputTokens    Int?
+  latencyMs       Int
+  status          LlmCallStatus
+  error           String?
+  createdAt       DateTime      @default(now())
+
+  run           Run            @relation(fields: [runId], references: [id], onDelete: Cascade)
+  stepExecution StepExecution? @relation(fields: [stepExecutionId], references: [id], onDelete: Cascade)
+
+  @@index([runId])
+}
+
+model ExternalAction {
+  id             String   @id @default(cuid())
+  idempotencyKey String   @unique
+  runId          String
+  stepId         String
+  request        Json
+  response       Json
+  createdAt      DateTime @default(now())
+
+  run Run @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId])
+}
+
+model AuditEvent {
+  id              String   @id @default(cuid())
+  runId           String
+  stepExecutionId String?
+  type            String
+  payload         Json
+  createdAt       DateTime @default(now())
+
+  run           Run            @relation(fields: [runId], references: [id], onDelete: Cascade)
+  stepExecution StepExecution? @relation(fields: [stepExecutionId], references: [id], onDelete: Cascade)
+
+  @@index([runId, createdAt])
+}
