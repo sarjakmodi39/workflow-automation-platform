@@ -93,4 +93,97 @@ describe("step registry", () => {
   it("throws a ValidationError for an unknown step type", () => {
     expect(() => getStepSpec("nonexistent")).toThrow(ValidationError);
   });
+
+  it("includes a summary field in the report output shape only when summarising", () => {
+    expect(
+      REGISTRY.final_report.outputSchema({ title: "X", summarize: true }),
+    ).toEqual({ title: "string", sections: "array", summary: "string" });
+
+    const withoutSummary = REGISTRY.final_report.outputSchema({
+      title: "X",
+      summarize: false,
+    });
+    expect(withoutSummary).toEqual({ title: "string", sections: "array" });
+    expect(withoutSummary).not.toHaveProperty("summary");
+
+    const summarizeOmitted = REGISTRY.final_report.outputSchema({ title: "X" });
+    expect(summarizeOmitted).toEqual({ title: "string", sections: "array" });
+    expect(summarizeOmitted).not.toHaveProperty("summary");
+  });
+
+  it("derives the structured input output shape from its configured fields", () => {
+    const shape = REGISTRY.structured_input.outputSchema({
+      fields: [
+        { name: "amount", kind: "number" },
+        { name: "vendor", kind: "string" },
+      ],
+    });
+    expect(shape).toEqual({ amount: "number", vendor: "string" });
+  });
+
+  it("returns an empty structured input output shape when fields are absent or not an array", () => {
+    expect(REGISTRY.structured_input.outputSchema({})).toEqual({});
+    expect(
+      REGISTRY.structured_input.outputSchema({ fields: "not-an-array" }),
+    ).toEqual({});
+  });
+
+  it("reports a config error when structured input declares no fields", () => {
+    expect(REGISTRY.structured_input.validateConfig({ fields: [] })).toEqual([
+      "Structured input must declare at least one field.",
+    ]);
+  });
+
+  it("reports a config error when a structured input field has no name", () => {
+    expect(
+      REGISTRY.structured_input.validateConfig({
+        fields: [{ name: "", kind: "string" }],
+      }),
+    ).toEqual(["Every input field needs a name."]);
+  });
+
+  it("reports a config error when document retrieval has no query", () => {
+    expect(REGISTRY.document_retrieval.validateConfig({})).toEqual([
+      "Document retrieval needs a query.",
+    ]);
+    expect(REGISTRY.document_retrieval.validateConfig({ query: "" })).toEqual([
+      "Document retrieval needs a query.",
+    ]);
+  });
+
+  it("reports a config error when document retrieval topK is not positive", () => {
+    expect(
+      REGISTRY.document_retrieval.validateConfig({ query: "invoices", topK: 0 }),
+    ).toEqual(["topK must be a positive number."]);
+  });
+
+  it("accepts a valid document retrieval config", () => {
+    expect(
+      REGISTRY.document_retrieval.validateConfig({ query: "invoices", topK: 5 }),
+    ).toEqual([]);
+  });
+
+  it("reports a config error when human approval has no prompt", () => {
+    expect(REGISTRY.human_approval.validateConfig({})).toEqual([
+      "Human approval needs a prompt explaining what is being approved.",
+    ]);
+  });
+
+  it("accepts a valid human approval config", () => {
+    expect(
+      REGISTRY.human_approval.validateConfig({ prompt: "Approve this refund?" }),
+    ).toEqual([]);
+  });
+
+  it("reports a config error when the external action has no action name", () => {
+    expect(REGISTRY.mock_external_action.validateConfig({})).toEqual([
+      "External action needs an action name.",
+    ]);
+  });
+
+  it("accepts a valid external action config", () => {
+    expect(
+      REGISTRY.mock_external_action.validateConfig({ action: "post_invoice" }),
+    ).toEqual([]);
+  });
 });
