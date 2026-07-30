@@ -14,14 +14,8 @@ import {
 import type { FieldKind } from "@/lib/engine/registry";
 import type { StepDefinition } from "@/lib/types";
 
-/*
- * Starting a run: the one place this UI writes anything.
- *
- * Client-side because it owns a text buffer, a submission in flight, and three
- * outcomes the reader has to be able to tell apart — input that is not valid
- * JSON (fix it and retry), a rejection from the API (a different fix), and a
- * created run (go and watch it).
- */
+/* Starting a run: the one place this UI writes anything. Client-side because it owns a text
+ * buffer, a request in flight, and three outcomes the reader must tell apart. */
 
 /** Example values for the field names the seeded corpus is written around. Every declared
  *  field needs one: an empty prefill leaves a reviewer guessing what to type. */
@@ -55,12 +49,8 @@ function placeholderFor(kind: unknown): unknown {
   }
 }
 
-/**
- * Builds the starting input from the workflow's own `structured_input` step, so
- * the keys are the keys that step will require rather than a guess kept in the
- * UI. No such step means no declared input shape, and an empty object is the
- * honest default.
- */
+/** Builds the starting input from the workflow's own `structured_input` step, so the keys
+ *  are the ones that step requires rather than a guess kept in the UI. */
 function defaultInputFor(steps: StepDefinition[]): string {
   const declaring = steps.find((step) => step.type === "structured_input");
   const fields = declaring?.config?.fields;

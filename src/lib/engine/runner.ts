@@ -532,7 +532,20 @@ export async function resumeRun(
       `Run ${runId} is awaiting an approval decision and cannot be resumed.`,
     );
   }
-  if (!RESUMABLE.includes(run.status)) {
+
+  // CANCELLED covers two events with opposite fates: an operator meaning to return, and a
+  // person saying no. Distinguished by the approval rows, never by the status alone.
+  if (run.status === "CANCELLED") {
+    const rejected = await findRejectedGate(
+      deps,
+      await deps.store.listStepExecutions(runId),
+    );
+    if (rejected) {
+      throw new ConflictError(
+        `Run ${runId} was stopped by a rejected approval and cannot be resumed.`,
+      );
+    }
+  } else if (!RESUMABLE.includes(run.status)) {
     throw new ConflictError(
       `Run ${runId} is ${run.status} and cannot be resumed.`,
     );

@@ -3,19 +3,8 @@ import { requiredJson } from "@/lib/engine/store.prisma";
 import { validateWorkflow } from "@/lib/engine/validator";
 import { SEED_WORKFLOWS } from "@/seed/workflows";
 
-/*
- * Seeds the demo workflows. Run with `npm run db:seed` after `npm run db:push`.
- *
- * Idempotent by construction: every row carries a fixed id and is written with
- * `upsert`, so running it twice leaves the same workflows behind rather than a
- * second copy of each. That matters because the natural time to re-run a seed
- * is after a schema change, when duplicate fixtures are the last thing wanted.
- *
- * It does not seed runs. A run is the engine's own output, and fabricating one
- * row by row would put history in the database that no execution ever produced
- * — the audit trail would describe events that did not happen. Runs are created
- * by pressing Run.
- */
+/* Seeds the demo workflows; idempotent, since every row has a fixed id and is upserted.
+ * Seeds no runs: fabricating one would put events in the audit trail that never happened. */
 
 async function main() {
   console.log(`Seeding ${SEED_WORKFLOWS.length} workflows…\n`);
@@ -30,11 +19,8 @@ async function main() {
     console.log(`  ${workflow.name}`);
 
     for (const version of workflow.versions) {
-      // Re-validate at write time. The test suite already asserts this, but the
-      // suite runs against the fixtures and this runs against the database — and
-      // the whole point of validating before persisting is that a version which
-      // cannot execute should never reach a row. The one deliberate exception
-      // declares itself with `expectInvalid`.
+      // Re-validated at write time: the suite checks the fixtures, this checks what
+      // reaches a row. The one deliberate exception declares itself with `expectInvalid`.
       const issues = validateWorkflow(version.definition, version.grantedPermissions);
 
       if (version.expectInvalid) {

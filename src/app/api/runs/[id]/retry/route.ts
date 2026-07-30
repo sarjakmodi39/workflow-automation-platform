@@ -18,16 +18,8 @@ const retryBodySchema = z.object({
   stepExecutionId: z.string().min(1, "stepExecutionId is required."),
 });
 
-/**
- * Manually retries one failed step.
- *
- * `retryStep` raises ConflictError for a run another worker has locked and for a
- * run stopped by a rejected approval; both surface as 409. A locked run is the
- * one case where "try again shortly" is the right client behaviour, but that is
- * the client's call to make with the retryable flag in the body — this route
- * does not loop, because a route that retried a lock conflict itself would also
- * retry a rejected approval.
- */
+/** Manually retries one failed step. A locked run and a rejected approval both surface as
+ *  409; this route never loops, since retrying a lock would also retry a rejection. */
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },

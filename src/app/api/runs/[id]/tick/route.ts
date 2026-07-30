@@ -12,13 +12,8 @@ export const dynamic = "force-dynamic";
 // answer 504 mid-step. 60s is the Hobby ceiling and clears the budget.
 export const maxDuration = 60;
 
-/**
- * Drives one locked tick. Idempotent by design: `advanceRun` never redoes work
- * already done, returns the run unchanged when it is terminal or parked at an
- * approval gate, and yields to whoever already holds the lock. So this route
- * has no status guard of its own — the runner owns that decision, and a second
- * copy of it here could only disagree.
- */
+/** Drives one locked tick, idempotent by design: work already done is never redone. No
+ *  status guard here, because a second copy of the runner's rules could only disagree. */
 export async function POST(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },

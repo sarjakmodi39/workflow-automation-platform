@@ -108,13 +108,8 @@ export const REGISTRY: Record<StepType, StepTypeSpec> = {
       }
       for (const f of fields) {
         if (!f.name) errors.push("Every extraction field needs a name.");
-        // `JsonShape` is one level deep, so an array or object field cannot
-        // describe its element or property types. The Gemini adapter turns the
-        // shape into a responseSchema, and Gemini rejects an ARRAY without
-        // `items` with a 400 — which the adapter classifies as non-retryable,
-        // so the run would fail mid-execution with a schema complaint from the
-        // model API. Refuse it here instead: a workflow that cannot work is
-        // caught when it is saved, not when someone runs it.
+        // JsonShape is one level deep, so Gemini would reject an ARRAY with no `items` as a
+        // non-retryable 400 mid-run. Refused here instead: caught at save, not at execution.
         if (f.kind === "array" || f.kind === "object") {
           errors.push(
             `Extraction field "${f.name}" cannot be a ${f.kind}: the AI response schema is one level deep. Extract scalar fields, or use a document retrieval step.`,

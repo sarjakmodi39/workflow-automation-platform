@@ -8,14 +8,8 @@ export type Resource<T> =
   | { state: "ready"; data: T }
   | { state: "failed"; failure: ApiFailure };
 
-/**
- * One request, three states, and a way to try again.
- *
- * `load` is held in a ref rather than listed as a dependency: it is written as
- * an inline arrow at every call site, so a new identity each render would make
- * it a dependency that always changed and fetch forever. Re-fetching is driven
- * by `deps` and by `reload`, both explicit.
- */
+/** One request, three states, and a way to try again. `load` lives in a ref because an
+ *  inline arrow would change identity every render and fetch forever. */
 export function useApiResource<T>(
   load: () => Promise<ApiResult<T>>,
   deps: readonly unknown[] = [],

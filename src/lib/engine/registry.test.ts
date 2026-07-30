@@ -70,9 +70,8 @@ describe("step registry", () => {
   });
 
   it("rejects an extraction field the AI response schema cannot describe", () => {
-    // A one-level JsonShape cannot express element types, and Gemini rejects an
-    // ARRAY with no `items` as a non-retryable 400. Better to refuse the
-    // workflow when it is saved than to fail a run with a model-API complaint.
+    // A one-level JsonShape cannot express element types, and Gemini rejects an ARRAY with
+    // no `items` as a non-retryable 400 — better refused at save than mid-run.
     const errors = REGISTRY.ai_extraction.validateConfig({
       source: "$.steps.retrieve.documents",
       fields: [

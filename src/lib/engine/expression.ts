@@ -9,11 +9,8 @@ export interface ConditionResult {
   description: string;
 }
 
-/**
- * Resolves a `$.`-prefixed path against the execution context.
- * Anything not starting with `$.` is treated as a literal value.
- * Missing paths resolve to `undefined` rather than throwing.
- */
+/** Resolves a `$.`-prefixed path against the context; anything else is a literal.
+ *  Missing paths resolve to `undefined` rather than throwing. */
 export function resolvePath(path: string, ctx: ExecutionContext): unknown {
   if (typeof path !== "string" || !path.startsWith("$.")) return path;
 
@@ -95,10 +92,8 @@ function applyOp(op: Comparator["op"], left: unknown, right: unknown): boolean {
   }
 }
 
-/**
- * Evaluates a declarative condition. Never uses eval or Function —
- * only the fixed operator set above.
- */
+/** Evaluates a declarative condition. Never uses eval or Function — only the fixed
+ *  operator set above. */
 export function evaluateCondition(
   cond: Condition,
   ctx: ExecutionContext,

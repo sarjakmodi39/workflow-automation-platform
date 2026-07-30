@@ -104,17 +104,8 @@ export async function parseJsonBody<T>(
   return parsed.data;
 }
 
-/**
- * Structural schema for a workflow definition: an array of steps, each with a
- * non-empty id, type and name and an object config.
- *
- * Deliberately structural and not semantic. Whether the step types exist,
- * whether their configs are usable, whether references point backwards and
- * whether the granted permissions cover them is `validateWorkflow`'s job, and
- * duplicating any of it here would create a second definition of "valid" that
- * could disagree with the one the engine enforces. `condition` stays `unknown`
- * because `Condition` is recursive and the validator walks it defensively.
- */
+/** Structural, never semantic: whether types exist and permissions cover them is
+ *  `validateWorkflow`'s job, and a second definition of "valid" could disagree with it. */
 const stepSchema = z.object({
   id: z.string().min(1),
   type: z.string().min(1),
@@ -135,14 +126,8 @@ export const definitionBodySchema = z.object({
   grantedPermissions: z.array(z.string()).optional(),
 });
 
-/**
- * The one cast from validated request shape to the domain type, and the one
- * place an absent `config` becomes `{}`.
- *
- * An empty `steps` array is passed through rather than rejected here: the
- * validator reports it as `EMPTY_WORKFLOW`, and a caller sending an empty
- * definition is better served by that named issue than by a schema complaint.
- */
+/** The one cast to the domain type, and where an absent `config` becomes `{}`. Empty `steps`
+ *  passes through so the validator can name it EMPTY_WORKFLOW instead of a schema complaint. */
 export function toWorkflowDefinition(
   parsed: z.infer<typeof workflowDefinitionSchema> | undefined,
 ): WorkflowDefinition {
@@ -153,18 +138,8 @@ export function toWorkflowDefinition(
   return { steps } as WorkflowDefinition;
 }
 
-/**
- * Strips a run's lock bookkeeping before it goes over the wire.
- *
- * `lockToken` and `lockedUntil` are how the engine arbitrates which worker may
- * execute a step. They are internal coordination state, and there is no
- * authentication in front of these routes, so returning a raw `Run` row
- * publishes the live token of every listed run. No endpoint accepts a token
- * today, so possessing one grants nothing — but the moment any worker-facing
- * endpoint did, a published token would make it forgeable. The store already
- * maps rows field by field for this reason; this keeps the route layer honest
- * about the same boundary.
- */
+/** Strips lock bookkeeping before a run goes over the wire. No endpoint accepts a token
+ *  today, but publishing live ones would make any future worker endpoint forgeable. */
 export function publicRun<T extends { lockToken?: unknown; lockedUntil?: unknown }>(
   run: T,
 ): Omit<T, "lockToken" | "lockedUntil"> {

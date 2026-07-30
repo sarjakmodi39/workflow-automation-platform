@@ -22,14 +22,8 @@ const decisionBodySchema = z.object({
   reason: z.string().nullish(),
 });
 
-/**
- * Records a human decision on an approval gate.
- *
- * `decideApproval` refuses a run that is not AWAITING_APPROVAL and a step that
- * is not awaiting a decision, both with ConflictError, and a rejection stops the
- * run permanently. None of that is re-checked or retried here: the route's only
- * jobs are to validate the body and to report what the runner decided.
- */
+/** Records a human decision. `decideApproval` owns every guard and makes a rejection
+ *  permanent; this route only validates the body and reports what the runner decided. */
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },

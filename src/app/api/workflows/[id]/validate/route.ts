@@ -13,13 +13,8 @@ export const dynamic = "force-dynamic";
 // answer 504 mid-step. 60s is the Hobby ceiling and clears the budget.
 export const maxDuration = 60;
 
-/**
- * Dry-run validation. Issues are the successful answer here, not an error: the
- * editor asks "would this save?" and gets 200 with `valid: false` and the same
- * issue list the create routes would refuse with. Nothing is read or written,
- * so the `[id]` in the path is not resolved — it only scopes the endpoint to the
- * workflow being edited.
- */
+/** Dry-run validation: issues are the successful answer, not an error, so "would this save?"
+ *  returns 200 with `valid: false` and the same list the create routes would refuse with. */
 export async function POST(request: Request) {
   try {
     const body = await parseJsonBody(request, definitionBodySchema);

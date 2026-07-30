@@ -14,10 +14,8 @@ export interface CallLlmDeps {
   maxCalls: number;
 }
 
-/**
- * Calls the first provider that succeeds, logging every attempt — successful
- * or not — as an LlmCall row. Enforces the per-run call budget before trying.
- */
+/** Calls the first provider that succeeds, logging every attempt as an LlmCall row.
+ *  Enforces the per-run call budget before trying. */
 export async function callLlm<T = unknown>(
   deps: CallLlmDeps,
   req: LlmRequest,
@@ -60,10 +58,8 @@ export async function callLlm<T = unknown>(
       continue;
     }
 
-    // Deliberately outside the try above: if the store fails while recording a
-    // successful completion, that is a persistence fault, not a provider fault.
-    // Logging it as an ERROR for this provider would misreport a call that did
-    // succeed and would silently discard result.data. Let it propagate as itself.
+    // Outside the try on purpose: a store failure here is a persistence fault, and logging
+    // it as a provider ERROR would misreport a call that succeeded and discard its data.
     await deps.store.recordLlmCall({
       runId: deps.runId,
       stepExecutionId: deps.stepExecutionId,

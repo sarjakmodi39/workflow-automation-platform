@@ -1,21 +1,7 @@
 import { prisma } from "@/lib/db";
 
-/*
- * Probe: does the idempotency ledger actually stop a second external write?
- *
- * The failure this guards against is a crash in the window between the external
- * effect happening and the step being recorded as succeeded. On resume the
- * engine cannot tell that window from "never ran", so it re-executes the step —
- * and without a ledger the payment goes out twice.
- *
- * That window cannot be reached through the API, so this reproduces it directly:
- * take a completed run, rewind the external-action step to FAILED and the run to
- * FAILED, and leave the ExternalAction ledger row in place, which is exactly the
- * state a crash after the write would have left behind. Then resume and read
- * back what the second execution did.
- *
- * Run with: npx tsx scripts/probe-duplicate-write.ts <runId>
- */
+/* Reproduces a crash between an external write and the step being recorded, which the API
+ * cannot reach. Usage: npx tsx scripts/probe-duplicate-write.ts <runId>, then resume. */
 
 async function main() {
   const runId = process.argv[2];

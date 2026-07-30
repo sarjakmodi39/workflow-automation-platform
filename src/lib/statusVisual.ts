@@ -1,10 +1,7 @@
 import type { RunStatus, StepStatus } from "@/lib/types";
 
-/**
- * Run and step statuses share one badge vocabulary because a reader scanning a
- * run does not care which table a value came from — `SUCCEEDED` on a step and
- * `COMPLETED` on a run mean the same thing to them and must look the same.
- */
+/* Run and step statuses share one badge vocabulary: a reader does not care which table a
+ * value came from, and SUCCEEDED and COMPLETED mean the same thing to them. */
 export type DisplayStatus = RunStatus | StepStatus;
 
 export interface StatusVisual {
@@ -48,11 +45,8 @@ function humanise(status: string): string {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
-/**
- * Never throws and never returns nothing: an unrecognised status is rendered
- * neutrally rather than dropped, because a badge that disappears when the
- * enum grows hides the very state the reader is looking for.
- */
+/** Never throws and never returns nothing: an unrecognised status renders neutrally, since
+ *  a badge that vanishes as the enum grows hides the state the reader wants. */
 export function statusVisual(status: string): StatusVisual {
   return (
     VISUALS[status as DisplayStatus] ?? {

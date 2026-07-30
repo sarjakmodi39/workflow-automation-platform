@@ -1,14 +1,8 @@
 import Link from "next/link";
 import { WorkflowDetailView } from "@/app/workflows/[id]/WorkflowDetailView";
 
-/**
- * A Server Component that resolves the route param and nothing else.
- *
- * Next 15 hands `params` over as a Promise, so it is awaited. Nothing is read
- * from the database here, which is what lets the build succeed with no
- * `DATABASE_URL` and lets a missing database surface as this page's failure
- * state rather than as an exception during render.
- */
+/** Resolves the route param and nothing else. Reading no database here is what lets the
+ *  build succeed with no DATABASE_URL and turns a missing one into a failure state. */
 export const dynamic = "force-dynamic";
 
 export default async function WorkflowPage({

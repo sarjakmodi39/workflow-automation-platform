@@ -1,12 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { formatDuration, formatTimeOfDay, formatTimestamp } from "@/lib/format";
 
-/*
- * These render values that come out of the database, where the interesting cases
- * are the absent and the malformed ones: a step that has started but not
- * finished has no `finishedAt`, and a run reconstructed from rows written by two
- * application instances can carry timestamps that disagree.
- */
+/* These render database values, where the interesting cases are absent and malformed: an
+ * unfinished step has no `finishedAt`, and two instances can stamp disagreeing times. */
 
 describe("formatDuration", () => {
   it("reports sub-second durations in milliseconds", () => {
@@ -30,9 +26,8 @@ describe("formatDuration", () => {
   });
 
   it("refuses to render a negative duration from skewed clocks", () => {
-    // Two instances stamping `startedAt` and `finishedAt` can disagree. A step
-    // shown as taking -40 ms reads as a bug in the engine rather than in the
-    // clocks, so nothing is shown instead.
+    // Two instances stamping these can disagree, and a step shown as taking -40 ms reads
+    // as an engine bug rather than a clock one, so nothing is shown instead.
     expect(
       formatDuration("2026-07-30T10:00:00.100Z", "2026-07-30T10:00:00.060Z"),
     ).toBeNull();

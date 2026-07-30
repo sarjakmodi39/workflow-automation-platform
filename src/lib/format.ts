@@ -1,7 +1,5 @@
-/**
- * Timestamps arrive as ISO strings in JSON. These render only after a client
- * fetch resolves, so locale formatting cannot produce a hydration mismatch.
- */
+/* Timestamps arrive as ISO strings. These render only after a client fetch resolves, so
+ * locale formatting cannot produce a hydration mismatch. */
 export function formatTimestamp(value: string | null | undefined): string {
   if (!value) return "—";
   const date = new Date(value);
@@ -15,12 +13,8 @@ export function formatTimestamp(value: string | null | undefined): string {
   });
 }
 
-/**
- * Time of day including seconds.
- *
- * The audit trail routinely records several events inside the same minute, and
- * a timestamp that cannot separate them makes the ordering look arbitrary.
- */
+/** Time of day including seconds: the audit trail records several events inside one
+ *  minute, and a timestamp that cannot separate them makes the ordering look arbitrary. */
 export function formatTimeOfDay(value: string | null | undefined): string {
   if (!value) return "—";
   const date = new Date(value);
@@ -32,11 +26,8 @@ export function formatTimeOfDay(value: string | null | undefined): string {
   });
 }
 
-/**
- * How long a step took, from its two timestamps. Returns null when it has not
- * finished — an unfinished step has no duration, and rendering one as `0ms`
- * would claim it completed instantly.
- */
+/** How long a step took. Null when unfinished, since rendering `0ms` would claim it
+ *  completed instantly. */
 export function formatDuration(
   startedAt: string | null | undefined,
   finishedAt: string | null | undefined,

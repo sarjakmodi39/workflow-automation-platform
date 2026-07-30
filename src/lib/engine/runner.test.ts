@@ -199,13 +199,8 @@ describe("human approval", () => {
   });
 });
 
-/**
- * A human "no" is the one guarantee the whole platform exists to provide, so it
- * is defended at two independent layers: resumeRun refuses to revive a
- * cancelled run at all, and the replay path re-asserts the rejection even if
- * something hands it a RUNNING run. Each layer is pinned separately below,
- * because either one alone is a single point of failure.
- */
+/* A human "no" is the guarantee this platform exists to provide, defended twice: resumeRun
+ * refuses a run with a rejected gate, and the replay path re-asserts it even from RUNNING. */
 describe("a rejected approval is permanent", () => {
   async function rejectAtGate(amount: number): Promise<string> {
     const run = await startRun(deps, "wv1", { invoiceId: "INV-REJ", amount });
@@ -243,9 +238,8 @@ describe("a rejected approval is permanent", () => {
   it("re-asserts the rejection when the run is forced back to RUNNING past the gate", async () => {
     const runId = await rejectAtGate(9000);
 
-    // Bypass resumeRun's guard entirely and hand the runner a RUNNING run whose
-    // cursor sits on the external write itself — the worst case a forged or
-    // stale cursor could produce.
+    // Bypass resumeRun's guard and hand the runner a RUNNING run whose cursor sits on the
+    // external write — the worst case a forged or stale cursor could produce.
     await store.updateRun(runId, { status: "RUNNING", cursor: "post" });
     const driven = await advanceRun(deps, runId);
 
@@ -331,9 +325,8 @@ describe("cancel and resume", () => {
     expect(classify).toHaveLength(2);
     expect(classify.at(-1)?.status).toBe("SUCCEEDED");
 
-    // Attempt numbering continues across the resume. (runId, stepId, attempt)
-    // is unique in the schema, so restarting the count at 1 here is a P2002
-    // against Postgres rather than a cosmetic mislabelling.
+    // Attempt numbering continues across the resume: (runId, stepId, attempt) is unique,
+    // so restarting at 1 is a P2002 against Postgres, not a cosmetic mislabelling.
     expect(classify.map((s) => s.attempt)).toEqual([1, 2]);
 
     const audit = await store.listAudit(run.id);
@@ -358,11 +351,39 @@ describe("cancel and resume", () => {
     await expect(resumeRun(deps, run.id)).rejects.toThrow(ConflictError);
   });
 
-  it("refuses to resume a run cancelled by an operator", async () => {
+  it("resumes a run an operator cancelled, without repeating completed steps", async () => {
     const run = await startRun(deps, "wv1", { invoiceId: "INV-3", amount: 9000 });
     await advanceRun(deps, run.id);
+    const before = await store.listStepExecutions(run.id);
     await cancelRun(deps, run.id);
+    expect((await store.getRun(run.id))?.status).toBe("CANCELLED");
 
+    // "Support cancellation and later resume" means the operator can pick the run back
+    // up. CANCELLED alone must not close it — only a rejected approval does that.
+    const resumed = await resumeRun(deps, run.id);
+    expect(resumed.status).not.toBe("CANCELLED");
+
+    // Resuming re-drives from the cursor; the steps that already succeeded are replayed
+    // from storage rather than executed a second time.
+    const after = await store.listStepExecutions(run.id);
+    const reran = after.filter(
+      (s) => !before.some((b) => b.id === s.id) && s.stepType !== "human_approval",
+    );
+    expect(reran.map((s) => s.stepId)).toEqual([]);
+  });
+
+  it("still refuses to resume a run stopped by a rejected approval", async () => {
+    const run = await startRun(deps, "wv1", { invoiceId: "INV-3b", amount: 9000 });
+    const parked = await advanceRun(deps, run.id);
+    expect(parked.status).toBe("AWAITING_APPROVAL");
+
+    const gate = (await store.listStepExecutions(run.id)).find(
+      (s) => s.status === "AWAITING_APPROVAL",
+    );
+    await decideApproval(deps, run.id, gate!.id, "REJECTED", "no");
+
+    // Same CANCELLED status as the test above, opposite outcome — which is the whole
+    // reason the check reads the approval rows instead of trusting the status.
     await expect(resumeRun(deps, run.id)).rejects.toThrow(ConflictError);
     expect((await store.getRun(run.id))?.status).toBe("CANCELLED");
   });
@@ -578,9 +599,8 @@ describe("wall-clock budget", () => {
     def.steps = [def.steps[0], def.steps[5]]; // intake, then report
     store = createMemoryStore({ versions: [version(def)] });
 
-    // Each step costs ten minutes; the budget is one. Advancing the clock when a
-    // step execution is created — rather than on every read — keeps this test
-    // independent of how many times the runner happens to consult the clock.
+    // Each step costs ten minutes against a one-minute budget. Advancing on step creation
+    // rather than every read keeps this independent of how often the runner reads the clock.
     const base = new Date("2026-07-29T00:00:00Z").getTime();
     let clockMs = base;
     const createStep = store.createStepExecution.bind(store);
@@ -600,9 +620,8 @@ describe("wall-clock budget", () => {
 
     const midway = await store.listStepExecutions(run.id);
     expect(midway.map((s) => s.stepId)).toEqual(["intake"]);
-    // Running out of budget must not leave the lock behind, or the run is stuck.
-    // Read it back from the store: the record the runner returned was written
-    // inside the critical section, before the lock was released.
+    // Running out of budget must not leave the lock behind. Read from the store: the
+    // returned record was written inside the critical section, before release.
     expect((await store.getRun(run.id))?.lockToken).toBeNull();
 
     const finished = await advanceRun(deps, run.id);

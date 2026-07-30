@@ -25,9 +25,8 @@ export async function POST(
     const { id } = await params;
     const body = await parseJsonBody(request, definitionBodySchema);
 
-    // The parent is confirmed before anything referencing it is written: a
-    // WorkflowVersion row carries a foreign key to Workflow, and an unchecked id
-    // from the URL would surface as an opaque Prisma failure rather than a 404.
+    // The parent is confirmed first: a version carries a foreign key, and an unchecked
+    // id from the URL would surface as an opaque Prisma failure rather than a 404.
     const workflow = await prisma.workflow.findUnique({
       where: { id },
       include: { versions: { orderBy: { version: "desc" }, take: 1 } },
@@ -44,11 +43,8 @@ export async function POST(
 
     const nextVersion = (workflow.versions[0]?.version ?? 0) + 1;
 
-    // Reading the highest version and then inserting is not atomic, and
-    // @@unique([workflowId, version]) is what stops two concurrent editors from
-    // both claiming the same number. Translate that collision rather than
-    // letting it reach the generic handler: a concurrent edit is the client's to
-    // retry, and reporting it as a 500 tells them the opposite.
+    // Read-then-insert is not atomic; the unique constraint stops two editors claiming one
+    // number. Translated here, because a concurrent edit is the client's to retry, not a 500.
     let version;
     try {
       version = await prisma.workflowVersion.create({

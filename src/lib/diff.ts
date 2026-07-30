@@ -87,10 +87,8 @@ function changedFields(before: StepDefinition, after: StepDefinition): FieldChan
   return changes;
 }
 
-/**
- * Diffs two definitions by step id, not by position: matching on position would report a
- * step inserted at the top as though every following step had been rewritten.
- */
+/** Diffs by step id, not position: positional matching reports a step inserted at the top
+ *  as though every following step had been rewritten. */
 export function diffVersions(
   beforeSteps: StepDefinition[],
   afterSteps: StepDefinition[],

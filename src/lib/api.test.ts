@@ -12,13 +12,8 @@ import {
   ValidationError,
 } from "@/lib/errors";
 
-/**
- * The error-to-status mapping is the one piece of the API layer with branching
- * logic, and every route depends on it. A wrong status is invisible until
- * someone clicks something, so it is pinned here per error class rather than by
- * restating the table's string keys — a renamed `code` in errors.ts breaks these
- * tests instead of quietly falling through to 500.
- */
+/* The one branching piece of the API layer, and every route depends on it. Pinned per error
+ * class, so a renamed `code` breaks these tests instead of falling through to 500. */
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -55,9 +50,8 @@ describe("statusForError", () => {
   });
 
   it("does not treat a look-alike object as an AppError", () => {
-    // Only `instanceof AppError` counts. A bag of fields off the wire that
-    // happens to carry `code: "NOT_FOUND"` must not be able to choose its own
-    // status code.
+    // Only `instanceof AppError` counts: a bag of fields off the wire carrying
+    // `code: "NOT_FOUND"` must not get to choose its own status.
     expect(statusForError({ code: "NOT_FOUND", message: "nope" })).toBe(500);
   });
 });
@@ -120,12 +114,8 @@ describe("fail", () => {
   });
 });
 
-/**
- * `parseJsonBody` is what makes a malformed body a 400 rather than a 500: a bare
- * `schema.parse(await request.json())` lets a SyntaxError escape as an
- * unclassified throw, which the generic handler reports as a server fault. The
- * routes all depend on that distinction and none of them re-implement it.
- */
+/* `parseJsonBody` makes a malformed body a 400, not a 500: a bare `schema.parse(json())`
+ * lets a SyntaxError escape unclassified and be reported as a server fault. */
 describe("parseJsonBody", () => {
   const schema = z.object({ name: z.string().min(1) });
 

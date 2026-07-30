@@ -274,8 +274,11 @@ UI tests written for this document's own feature set.
 
 ## Known limitations
 
-1. **Single-tenant, no user authentication.** Permissions are enforced at the step level as
-   specified, but there is no notion of *who* is approving. `Approval.reason` is free text.
+1. **Single-tenant: site access, not user identity.** `APP_PASSWORD` gates the whole
+   deployment behind one shared password when it is set, and leaves the site public when it
+   is not — deliberately fail-open, so a forgotten variable cannot lock everyone out. That
+   is access control, not accounts: permissions are enforced at the step level as specified,
+   but there is no notion of *who* approved, and `Approval.reason` is free text.
 2. **Free-tier LLM providers.** Sustained load can hit rate limits, and free-tier quotas are
    both low and model-specific — the full `flash` alias allows only 20 requests per day, which
    is why the default is `gemini-flash-lite-latest`. Mitigated by the fallback chain and

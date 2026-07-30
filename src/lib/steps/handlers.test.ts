@@ -80,9 +80,8 @@ describe("structured_input handler", () => {
       config: { fields: [{ name: "vendor", kind: "string" }] },
     };
 
-    // `retryable` is what the runner consults before spending another attempt. Run input
-    // is fixed at creation, so a retryable error here produces a column of identical
-    // failures — which is exactly what it did before this was fixed.
+    // `retryable` decides whether the runner spends another attempt. Run input is fixed at
+    // creation, so a retryable error here produces a column of identical failures.
     await expect(HANDLERS.structured_input(step, deps)).rejects.toMatchObject({
       code: "STEP_EXECUTION_ERROR",
       retryable: false,
@@ -271,10 +270,8 @@ describe("mock_external_action handler", () => {
   });
 
   it("returns the stored response, not a recomputed one, on a duplicate", async () => {
-    // actionId derives from the idempotency key alone, so it is identical
-    // whether read back from the ledger or recomputed — it cannot distinguish
-    // the two. An advancing clock can: the duplicate must report the moment the
-    // ORIGINAL write happened, which is only available from the stored row.
+    // actionId derives from the key alone, so it cannot tell a re-read from a recompute.
+    // An advancing clock can: the duplicate must report the ORIGINAL write's moment.
     const deps = await makeDeps({ steps: { extract: { amount: 100 } } });
     let tick = 0;
     const clock = ["2026-07-29T00:00:00.000Z", "2026-07-29T09:30:00.000Z"];
@@ -360,9 +357,8 @@ describe("buildIdempotencyKey", () => {
   });
 
   it("separates undefined from null so an unset path is not a duplicate write", () => {
-    // JSON.stringify renders both as `null`. If the hash did too, a payload
-    // whose upstream path was unset would collide with one carrying an explicit
-    // null, and the ledger would swallow the second write as a duplicate.
+    // JSON.stringify renders both as `null`; if the hash did too, an unset upstream path
+    // would collide with an explicit null and the ledger would swallow a real write.
     const undef = buildIdempotencyKey("run1", "post", "act", { note: undefined });
     const nul = buildIdempotencyKey("run1", "post", "act", { note: null });
     expect(undef).not.toBe(nul);

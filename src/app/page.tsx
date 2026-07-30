@@ -1,14 +1,8 @@
 import { RecentRuns } from "@/app/RecentRuns";
 import { WorkflowList } from "@/app/WorkflowList";
 
-/**
- * A Server Component shell around two client-side data panels.
- *
- * Nothing is fetched here at request time, so nothing on this page depends on a
- * database being configured at build time. The panels fetch the same routes the
- * API exposes, which is also how their loading and failure states become
- * visible rather than theoretical.
- */
+/** A Server Component shell around two client-side panels, so nothing here needs a database
+ *  at build time and the panels' loading and failure states are real rather than theoretical. */
 export const dynamic = "force-dynamic";
 
 const PROPERTIES = [

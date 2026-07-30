@@ -55,15 +55,8 @@ interface SentOpenRouterBody {
   messages: { role: string; content: string }[];
 }
 
-/**
- * The suite must stay offline and deterministic: it runs in CI and on a machine
- * with no keys. Every test injects `fetchImpl`, so `globalThis.fetch` is
- * replaced with a stub that fails loudly — any real network attempt shows up as
- * a named failure rather than a timeout or, worse, a pass that depended on the
- * network. The one test that exercises the default transport swaps in its own
- * stub, and the original is restored in `afterEach` so a leaked stub cannot
- * change the outcome of another test file.
- */
+/* The suite stays offline: `globalThis.fetch` is stubbed to fail loudly, so a real network
+ * attempt is a named failure rather than a timeout or a pass that depended on the network. */
 const originalFetch = globalThis.fetch;
 const originalEnv = {
   GEMINI_API_KEY: process.env.GEMINI_API_KEY,

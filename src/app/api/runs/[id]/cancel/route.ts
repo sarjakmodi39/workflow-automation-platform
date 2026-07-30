@@ -12,11 +12,8 @@ export const dynamic = "force-dynamic";
 // answer 504 mid-step. 60s is the Hobby ceiling and clears the budget.
 export const maxDuration = 60;
 
-/**
- * Cancels a run. `cancelRun` returns an already-terminal run unchanged rather
- * than raising, so cancelling twice is a 200 both times — there is no state to
- * conflict over once a run has stopped.
- */
+/** Cancels a run. An already-terminal run returns unchanged rather than raising, so
+ *  cancelling twice is a 200 both times — there is no state to conflict over. */
 export async function POST(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },

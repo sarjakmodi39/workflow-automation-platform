@@ -20,14 +20,8 @@ interface OpenRouterBody {
   usage?: { prompt_tokens?: unknown; completion_tokens?: unknown };
 }
 
-/**
- * OpenRouter, the fallback. `response_format: json_object` is advisory across
- * the models it fronts and the free tiers honour it unevenly, so the schema is
- * also restated in the system prompt and the response goes through
- * `parseJsonStrict`, which strips the markdown fence models add anyway.
- *
- * The API key travels in the `authorization` header, never in the URL.
- */
+/** The fallback. `response_format` is only advisory here, so the schema is restated in the
+ *  prompt and parsed strictly. The key travels in a header, never the URL. */
 export class OpenRouterProvider implements LlmProvider {
   readonly name = "openrouter";
   readonly model: string;

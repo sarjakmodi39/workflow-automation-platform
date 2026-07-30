@@ -270,11 +270,8 @@ export interface RunDetailResponse {
   llmCalls: LlmCallRow[];
 }
 
-/**
- * What every control route returns: the run as it stands after the transition.
- * `tick`, `approve`, `retry`, `resume` and `cancel` all share this shape, which
- * is why one `post` helper can drive all five.
- */
+/** What every control route returns: the run after the transition. All five share this
+ *  shape, which is why one `post` helper drives them. */
 export interface RunControlResponse {
   run: RunDetail;
 }
@@ -288,14 +285,8 @@ export function toStringArray(value: unknown): string[] {
   return value.filter((v): v is string => typeof v === "string");
 }
 
-/**
- * Extracts a renderable step list from a `definition` column.
- *
- * A row written by something other than the create routes could hold anything,
- * and `definition.steps.map(...)` on a malformed value throws during render —
- * which replaces the whole page with an error boundary instead of the failure
- * state this UI is built to show. An empty list is a state the page handles.
- */
+/** Extracts a renderable step list from a `definition` column. A malformed value would throw
+ *  during render and trip the error boundary; an empty list is a state the page handles. */
 export function toStepList(definition: unknown): StepDefinition[] {
   const steps = (definition as WorkflowDefinition | null | undefined)?.steps;
   if (!Array.isArray(steps)) return [];

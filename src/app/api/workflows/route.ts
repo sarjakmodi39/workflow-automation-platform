@@ -48,9 +48,8 @@ export async function POST(request: Request) {
     const definition = toWorkflowDefinition(body.definition);
     const grants = body.grantedPermissions ?? [];
 
-    // Before persistence, not at execution time: a version that cannot execute
-    // must never reach the database, because the run that reads it back has no
-    // better moment to discover that than halfway through.
+    // Before persistence, not at execution: a version that cannot execute must never
+    // reach the database, since a run has no better moment to discover that mid-flight.
     const issues = validateWorkflow(definition, grants);
     if (issues.length > 0) {
       throw new ValidationError("Workflow definition is not valid.", { issues });

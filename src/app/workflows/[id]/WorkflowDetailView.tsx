@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { RunLauncher } from "@/app/workflows/[id]/RunLauncher";
 import { VersionCompare } from "@/app/workflows/[id]/VersionCompare";
 import { ApiErrorNotice } from "@/components/ApiErrorNotice";
@@ -23,14 +23,8 @@ import { formatTimestamp, pluralise } from "@/lib/format";
 import type { StepDefinition, StepType } from "@/lib/types";
 import { useApiResource } from "@/lib/useApiResource";
 
-/*
- * The workflow detail view.
- *
- * Client-side for the same reason as the dashboard panels: the loading, empty
- * and failure states are only real if the fetch happens where the reader can
- * watch it. The route itself stays a Server Component that does nothing but
- * await `params`.
- */
+/* Client-side for the same reason as the dashboard panels: loading, empty and failure states
+ * are only real if the fetch happens where the reader can watch it. */
 
 function DetailSkeleton() {
   return (
@@ -56,6 +50,8 @@ export function WorkflowDetailView({ id }: { id: string }) {
     () => getJson<WorkflowDetailResponse>(`/api/workflows/${id}`),
     [id],
   );
+  // Null means "whichever is newest", so the default survives a reload that adds a version.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   if (resource.state === "loading") return <DetailSkeleton />;
 
@@ -73,6 +69,9 @@ export function WorkflowDetailView({ id }: { id: string }) {
   const versions = Array.isArray(workflow?.versions) ? workflow.versions : [];
   // The route orders versions by number descending.
   const latest = versions[0];
+  // Any version can be selected, not just the newest: re-running an earlier version with
+  // new input is the point of keeping them immutable.
+  const selected = versions.find((v) => v.id === selectedId) ?? latest;
 
   return (
     <>
@@ -85,8 +84,14 @@ export function WorkflowDetailView({ id }: { id: string }) {
         </p>
       </header>
 
-      {latest ? (
-        <VersionView workflowId={id} versions={versions} version={latest} />
+      {selected ? (
+        <VersionView
+          workflowId={id}
+          versions={versions}
+          version={selected}
+          latestId={latest?.id}
+          onSelect={setSelectedId}
+        />
       ) : (
         <div className="mt-8">
           <EmptyState title="This workflow has no versions">
@@ -104,10 +109,14 @@ function VersionView({
   workflowId,
   versions,
   version,
+  latestId,
+  onSelect,
 }: {
   workflowId: string;
   versions: VersionDetail[];
   version: VersionDetail;
+  latestId: string | undefined;
+  onSelect: (id: string) => void;
 }) {
   const steps = useMemo(() => toStepList(version.definition), [version.definition]);
   const grants = useMemo(
@@ -115,11 +124,8 @@ function VersionView({
     [version.grantedPermissions],
   );
 
-  /*
-   * The stored definition is re-validated live, with the same validator that
-   * gated its save. It is sent exactly as it came out of the database rather
-   * than normalised first, so that what is checked is what is stored.
-   */
+  // Re-validated live with the same validator that gated its save, and sent exactly as it
+  // came out of the database, so what is checked is what is stored.
   const { resource: validation, reload: revalidate } = useApiResource<ValidateResponse>(
     () =>
       postJson<ValidateResponse>(`/api/workflows/${workflowId}/validate`, {
@@ -173,25 +179,43 @@ function VersionView({
           {versions.map((v) => {
             const isShown = v.id === version.id;
             return (
-              <li
-                key={v.id}
-                className={`rounded-md border px-3 py-1.5 text-sm ${
-                  isShown
-                    ? "border-blue-300 bg-blue-50 text-blue-900"
-                    : "border-slate-200 bg-white text-slate-700"
-                }`}
-              >
-                <span className="font-medium">v{v.version}</span>
-                <span className="ml-2 text-xs text-slate-500">
-                  {formatTimestamp(v.createdAt)}
-                </span>
-                {isShown ? (
-                  <span className="ml-2 text-xs font-medium">shown below</span>
-                ) : null}
+              <li key={v.id}>
+                {/* A button, not a label: an older version has to be selectable, because
+                    re-running one with new input is why versions are kept immutable. */}
+                <button
+                  type="button"
+                  onClick={() => onSelect(v.id)}
+                  aria-pressed={isShown}
+                  className={`rounded-md border px-3 py-1.5 text-sm ${
+                    isShown
+                      ? "border-blue-400 bg-blue-50 text-blue-900 ring-1 ring-blue-300"
+                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  <span className="font-medium">v{v.version}</span>
+                  {v.id === latestId ? (
+                    <span className="ml-1.5 rounded bg-slate-200 px-1 py-0.5 text-xs text-slate-700">
+                      latest
+                    </span>
+                  ) : null}
+                  <span className="ml-2 text-xs text-slate-500">
+                    {formatTimestamp(v.createdAt)}
+                  </span>
+                  {isShown ? (
+                    <span className="ml-2 text-xs font-medium">shown below</span>
+                  ) : null}
+                </button>
               </li>
             );
           })}
         </ul>
+        {version.id !== latestId ? (
+          <p className="mt-3 rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+            Showing an earlier version. Everything below — the steps, the validation, and
+            the run launcher — refers to v{version.version}, so starting a run here runs
+            that version with whatever input you give it.
+          </p>
+        ) : null}
       </Section>
 
       <VersionCompare versions={versions} />

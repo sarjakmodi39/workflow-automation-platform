@@ -1,9 +1,7 @@
 import type { LlmProvider, LlmRequest, LlmResponse } from "@/lib/llm/types";
 
-/**
- * Deterministic provider for tests and offline demos. Fixtures are keyed by
- * `system::user`; anything unmatched falls back to the default value.
- */
+/** Deterministic provider for tests and offline demos. Fixtures are keyed by
+ *  `system::user`; anything unmatched falls back to the default value. */
 export class MockLlmProvider implements LlmProvider {
   readonly name: string;
   readonly model = "mock-1";
