@@ -1,6 +1,11 @@
 import type { ErrorBody } from "@/lib/api";
 import type { ValidationIssue } from "@/lib/engine/validator";
-import type { RunStatus, StepDefinition, WorkflowDefinition } from "@/lib/types";
+import type {
+  RunStatus,
+  StepDefinition,
+  StepStatus,
+  WorkflowDefinition,
+} from "@/lib/types";
 
 /*
  * The browser's half of the API contract.
@@ -204,6 +209,99 @@ export interface ValidateResponse {
 /** `POST /api/runs` — 201 with the run after its first tick. */
 export interface CreateRunResponse {
   run: { id: string; status: RunStatus };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Run detail                                                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * `publicRun()` strips `lockToken` and `lockedUntil` from every run the API
+ * returns, so they are deliberately absent here. The lock is an internal
+ * concurrency mechanism; a browser that could read the token could steal it.
+ */
+export interface RunDetail {
+  id: string;
+  workflowVersionId: string;
+  status: RunStatus;
+  input: unknown;
+  cursor: string | null;
+  error: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** The decision recorded against an approval gate, once a person has made one. */
+export interface ApprovalRow {
+  id: string;
+  decision: "APPROVED" | "REJECTED";
+  reason: string | null;
+  decidedAt: string;
+}
+
+export interface StepExecutionRow {
+  id: string;
+  runId: string;
+  stepId: string;
+  stepType: string;
+  status: StepStatus;
+  attempt: number;
+  retrySafe: boolean;
+  input: unknown;
+  output: unknown;
+  explanation: unknown;
+  error: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  /** `include: { approval: true }` on the route; null until a decision exists. */
+  approval: ApprovalRow | null;
+}
+
+/**
+ * `type` is a database enum, but it is typed as `string` here on purpose: the
+ * UI looks it up in a label table with a fallback, so an event type added to the
+ * schema before the UI knows about it still renders instead of vanishing.
+ */
+export interface AuditRow {
+  id: string;
+  stepExecutionId: string | null;
+  type: string;
+  payload: unknown;
+  createdAt: string;
+}
+
+export interface LlmCallRow {
+  id: string;
+  stepExecutionId: string | null;
+  provider: string;
+  model: string;
+  prompt: string;
+  response: string | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  latencyMs: number;
+  status: "SUCCESS" | "ERROR";
+  error: string | null;
+  createdAt: string;
+}
+
+/** `GET /api/runs/[id]` — the whole run in one response. */
+export interface RunDetailResponse {
+  run: RunDetail;
+  workflow: { id: string; name: string; createdAt: string };
+  version: VersionDetail;
+  steps: StepExecutionRow[];
+  audit: AuditRow[];
+  llmCalls: LlmCallRow[];
+}
+
+/**
+ * What every control route returns: the run as it stands after the transition.
+ * `tick`, `approve`, `retry`, `resume` and `cancel` all share this shape, which
+ * is why one `post` helper can drive all five.
+ */
+export interface RunControlResponse {
+  run: RunDetail;
 }
 
 /* -------------------------------------------------------------------------- */
