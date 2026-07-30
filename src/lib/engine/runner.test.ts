@@ -10,7 +10,7 @@ import {
 } from "@/lib/engine/runner";
 import { createMemoryStore, MemoryRunStore } from "@/lib/engine/store.memory";
 import { MockLlmProvider } from "@/lib/llm/mock";
-import { RateLimitError } from "@/lib/errors";
+import { ConflictError, RateLimitError } from "@/lib/errors";
 import type { WorkflowDefinition, WorkflowVersionRecord } from "@/lib/types";
 
 const GRANTS = ["tool:llm", "tool:document_search", "action:post_invoice"];
@@ -199,6 +199,91 @@ describe("human approval", () => {
   });
 });
 
+/**
+ * A human "no" is the one guarantee the whole platform exists to provide, so it
+ * is defended at two independent layers: resumeRun refuses to revive a
+ * cancelled run at all, and the replay path re-asserts the rejection even if
+ * something hands it a RUNNING run. Each layer is pinned separately below,
+ * because either one alone is a single point of failure.
+ */
+describe("a rejected approval is permanent", () => {
+  async function rejectAtGate(amount: number): Promise<string> {
+    const run = await startRun(deps, "wv1", { invoiceId: "INV-REJ", amount });
+    await advanceRun(deps, run.id);
+    const gate = (await store.listStepExecutions(run.id)).find(
+      (s) => s.stepId === "approve",
+    )!;
+    const stopped = await decideApproval(
+      deps,
+      run.id,
+      gate.id,
+      "REJECTED",
+      "Vendor not verified.",
+    );
+    expect(stopped.status).toBe("CANCELLED");
+    return run.id;
+  }
+
+  it("refuses to resume the cancelled run, and performs no external write", async () => {
+    const runId = await rejectAtGate(9000);
+
+    await expect(resumeRun(deps, runId)).rejects.toThrow(ConflictError);
+
+    const after = await store.listStepExecutions(runId);
+    expect(after.filter((s) => s.stepId === "post")).toHaveLength(0);
+
+    const audit = await store.listAudit(runId);
+    expect(audit.filter((e) => e.type === "TOOL_CALL")).toHaveLength(0);
+    // A resume that did not happen must not be logged as one.
+    expect(audit.some((e) => e.type === "RUN_RESUMED")).toBe(false);
+
+    expect((await store.getRun(runId))?.status).toBe("CANCELLED");
+  });
+
+  it("re-asserts the rejection when the run is forced back to RUNNING past the gate", async () => {
+    const runId = await rejectAtGate(9000);
+
+    // Bypass resumeRun's guard entirely and hand the runner a RUNNING run whose
+    // cursor sits on the external write itself — the worst case a forged or
+    // stale cursor could produce.
+    await store.updateRun(runId, { status: "RUNNING", cursor: "post" });
+    const driven = await advanceRun(deps, runId);
+
+    expect(driven.status).toBe("CANCELLED");
+    expect(
+      (await store.listStepExecutions(runId)).filter((s) => s.stepId === "post"),
+    ).toHaveLength(0);
+    const audit = await store.listAudit(runId);
+    expect(audit.filter((e) => e.type === "TOOL_CALL")).toHaveLength(0);
+  });
+
+  it("refuses a manual retry of any step on the rejected run", async () => {
+    const runId = await rejectAtGate(9000);
+    const intake = (await store.listStepExecutions(runId)).find(
+      (s) => s.stepId === "intake",
+    )!;
+
+    await expect(retryStep(deps, runId, intake.id)).rejects.toThrow(ConflictError);
+    expect(
+      (await store.listStepExecutions(runId)).filter((s) => s.stepId === "intake"),
+    ).toHaveLength(1);
+  });
+
+  it("still lets an approved gate through", async () => {
+    const run = await startRun(deps, "wv1", { invoiceId: "INV-OK", amount: 9000 });
+    await advanceRun(deps, run.id);
+    const gate = (await store.listStepExecutions(run.id)).find(
+      (s) => s.stepId === "approve",
+    )!;
+
+    const finished = await decideApproval(deps, run.id, gate.id, "APPROVED", "Fine.");
+
+    expect(finished.status).toBe("COMPLETED");
+    const audit = await store.listAudit(run.id);
+    expect(audit.filter((e) => e.type === "TOOL_CALL")).toHaveLength(1);
+  });
+});
+
 describe("cancel and resume", () => {
   it("cancels a run awaiting approval", async () => {
     const run = await startRun(deps, "wv1", { invoiceId: "INV-3", amount: 9000 });
@@ -210,22 +295,71 @@ describe("cancel and resume", () => {
     expect(audit.some((e) => e.type === "RUN_CANCELLED")).toBe(true);
   });
 
-  it("resumes a cancelled run without re-executing completed steps", async () => {
+  it("resumes a failed run and re-executes only the step that failed", async () => {
+    const failing = new MockLlmProvider("gemini").failWith(new RateLimitError("gemini"));
+    deps = makeDeps({ providers: [failing], maxAutoAttempts: 1 });
+
     const run = await startRun(deps, "wv1", { invoiceId: "INV-3", amount: 100 });
-    await advanceRun(deps, run.id);
+    const failed = await advanceRun(deps, run.id);
+    expect(failed.status).toBe("FAILED");
 
     const before = await store.listStepExecutions(run.id);
     const intakeId = before.find((s) => s.stepId === "intake")!.id;
+    expect(before.find((s) => s.stepId === "classify")?.status).toBe("FAILED");
 
-    await cancelRun(deps, run.id);
-    await resumeRun(deps, run.id);
+    // The cause is addressed: the provider is healthy on the next attempt.
+    deps = makeDeps({
+      providers: [
+        new MockLlmProvider("gemini").setDefault({
+          label: "low_risk",
+          confidence: 0.6,
+          rationale: "Recovered.",
+        }),
+      ],
+    });
+
+    const resumed = await resumeRun(deps, run.id);
+    expect(resumed.status).toBe("COMPLETED");
 
     const after = await store.listStepExecutions(run.id);
+    // intake had already succeeded, so the skip rule leaves it exactly as it was.
     expect(after.filter((s) => s.stepId === "intake")).toHaveLength(1);
     expect(after.find((s) => s.stepId === "intake")!.id).toBe(intakeId);
 
+    // classify had not, so it is attempted again and this time succeeds.
+    const classify = after.filter((s) => s.stepId === "classify");
+    expect(classify).toHaveLength(2);
+    expect(classify.at(-1)?.status).toBe("SUCCEEDED");
+
     const audit = await store.listAudit(run.id);
     expect(audit.some((e) => e.type === "RUN_RESUMED")).toBe(true);
+  });
+
+  it("refuses to resume a run that is awaiting an approval decision", async () => {
+    const run = await startRun(deps, "wv1", { invoiceId: "INV-3", amount: 9000 });
+    await advanceRun(deps, run.id);
+
+    await expect(resumeRun(deps, run.id)).rejects.toThrow(ConflictError);
+    expect((await store.getRun(run.id))?.status).toBe("AWAITING_APPROVAL");
+    const audit = await store.listAudit(run.id);
+    expect(audit.some((e) => e.type === "RUN_RESUMED")).toBe(false);
+  });
+
+  it("refuses to resume a completed run", async () => {
+    const run = await startRun(deps, "wv1", { invoiceId: "INV-3", amount: 100 });
+    const finished = await advanceRun(deps, run.id);
+    expect(finished.status).toBe("COMPLETED");
+
+    await expect(resumeRun(deps, run.id)).rejects.toThrow(ConflictError);
+  });
+
+  it("refuses to resume a run cancelled by an operator", async () => {
+    const run = await startRun(deps, "wv1", { invoiceId: "INV-3", amount: 9000 });
+    await advanceRun(deps, run.id);
+    await cancelRun(deps, run.id);
+
+    await expect(resumeRun(deps, run.id)).rejects.toThrow(ConflictError);
+    expect((await store.getRun(run.id))?.status).toBe("CANCELLED");
   });
 });
 
@@ -373,12 +507,104 @@ describe("execution path explanation", () => {
 });
 
 describe("locking", () => {
+  /** Seeds a foreign lock on the runner's own injected timeline. */
+  async function holdLock(runId: string, offsetMs: number): Promise<void> {
+    const now = deps.now();
+    await store.acquireLock(
+      runId,
+      "someone-else",
+      now,
+      new Date(now.getTime() + offsetMs),
+    );
+  }
+
   it("returns the current run without advancing when the lock is held", async () => {
     const run = await startRun(deps, "wv1", { invoiceId: "INV-11", amount: 100 });
-    await store.acquireLock(run.id, "someone-else", new Date(Date.now() + 60_000));
+    await holdLock(run.id, 60_000);
 
     const result = await advanceRun(deps, run.id);
     expect(result.status).toBe("PENDING");
     expect(await store.listStepExecutions(run.id)).toHaveLength(0);
+  });
+
+  it("advances once the held lock has expired on the injected clock", async () => {
+    const run = await startRun(deps, "wv1", { invoiceId: "INV-11", amount: 100 });
+    // Lease already over by the instant the runner asks. Nothing about this
+    // depends on the real clock, which is what makes the check meaningful.
+    await holdLock(run.id, -1);
+
+    const result = await advanceRun(deps, run.id);
+    expect(result.status).toBe("COMPLETED");
+  });
+
+  it("releases the lock after a tick", async () => {
+    const run = await startRun(deps, "wv1", { invoiceId: "INV-11", amount: 100 });
+    await advanceRun(deps, run.id);
+
+    const after = await store.getRun(run.id);
+    expect(after?.lockToken).toBeNull();
+    expect(after?.lockedUntil).toBeNull();
+  });
+
+  it("refuses a manual retry while another worker holds the lock", async () => {
+    const failing = new MockLlmProvider("gemini").failWith(new RateLimitError("gemini"));
+    deps = makeDeps({ providers: [failing], maxAutoAttempts: 1 });
+
+    const run = await startRun(deps, "wv1", { invoiceId: "INV-11", amount: 100 });
+    await advanceRun(deps, run.id);
+    const failed = (await store.listStepExecutions(run.id)).find(
+      (s) => s.stepId === "classify" && s.status === "FAILED",
+    )!;
+
+    await holdLock(run.id, 60_000);
+
+    // A background tick may return the run unchanged when it loses the race, but
+    // an operator command must not look like it succeeded.
+    await expect(retryStep(deps, run.id, failed.id)).rejects.toThrow(ConflictError);
+    expect(
+      (await store.listStepExecutions(run.id)).filter((s) => s.stepId === "classify"),
+    ).toHaveLength(1);
+  });
+});
+
+describe("wall-clock budget", () => {
+  it("stops between steps when the budget is spent and picks up from the cursor", async () => {
+    const def = definition();
+    def.steps = [def.steps[0], def.steps[5]]; // intake, then report
+    store = createMemoryStore({ versions: [version(def)] });
+
+    // Each step costs ten minutes; the budget is one. Advancing the clock when a
+    // step execution is created — rather than on every read — keeps this test
+    // independent of how many times the runner happens to consult the clock.
+    const base = new Date("2026-07-29T00:00:00Z").getTime();
+    let clockMs = base;
+    const createStep = store.createStepExecution.bind(store);
+    store.createStepExecution = (async (input) => {
+      const record = await createStep(input);
+      clockMs += 10 * 60_000;
+      return record;
+    }) as typeof store.createStepExecution;
+
+    deps = makeDeps({ budgetMs: 60_000, now: () => new Date(clockMs) });
+
+    const run = await startRun(deps, "wv1", { invoiceId: "INV-15", amount: 100 });
+    const paused = await advanceRun(deps, run.id);
+
+    expect(paused.status).toBe("RUNNING");
+    expect(paused.cursor).toBe("report");
+
+    const midway = await store.listStepExecutions(run.id);
+    expect(midway.map((s) => s.stepId)).toEqual(["intake"]);
+    // Running out of budget must not leave the lock behind, or the run is stuck.
+    // Read it back from the store: the record the runner returned was written
+    // inside the critical section, before the lock was released.
+    expect((await store.getRun(run.id))?.lockToken).toBeNull();
+
+    const finished = await advanceRun(deps, run.id);
+    expect(finished.status).toBe("COMPLETED");
+    expect((await store.listStepExecutions(run.id)).map((s) => s.stepId)).toEqual([
+      "intake",
+      "report",
+    ]);
   });
 });

@@ -3,6 +3,9 @@ import { createMemoryStore } from "@/lib/engine/store.memory";
 import { ConflictError, NotFoundError } from "@/lib/errors";
 import type { WorkflowVersionRecord } from "@/lib/types";
 
+/** Fixed instant for the lock tests, deliberately unrelated to the real clock. */
+const NOW = new Date("2026-07-29T00:00:00Z");
+
 const version: WorkflowVersionRecord = {
   id: "wv1",
   workflowId: "w1",
@@ -30,32 +33,47 @@ describe("MemoryRunStore", () => {
   it("grants the lock once and refuses a second holder", async () => {
     const store = createMemoryStore({ versions: [version] });
     const run = await store.createRun({ workflowVersionId: "wv1", input: {} });
-    const until = new Date(Date.now() + 60_000);
-    expect(await store.acquireLock(run.id, "token-a", until)).toBe(true);
-    expect(await store.acquireLock(run.id, "token-b", until)).toBe(false);
+    const until = new Date(NOW.getTime() + 60_000);
+    expect(await store.acquireLock(run.id, "token-a", NOW, until)).toBe(true);
+    expect(await store.acquireLock(run.id, "token-b", NOW, until)).toBe(false);
+  });
+
+  it("judges expiry against the supplied clock, not the ambient one", async () => {
+    const store = createMemoryStore({ versions: [version] });
+    const run = await store.createRun({ workflowVersionId: "wv1", input: {} });
+    const until = new Date(NOW.getTime() + 60_000);
+    expect(await store.acquireLock(run.id, "token-a", NOW, until)).toBe(true);
+
+    // Still inside the lease on the supplied timeline: refused.
+    const during = new Date(NOW.getTime() + 30_000);
+    expect(await store.acquireLock(run.id, "token-b", during, until)).toBe(false);
+
+    // Past the lease on the supplied timeline: granted, even though the
+    // ambient clock is nowhere near either instant.
+    const after = new Date(NOW.getTime() + 90_000);
+    expect(
+      await store.acquireLock(run.id, "token-b", after, new Date(after.getTime() + 60_000)),
+    ).toBe(true);
   });
 
   it("allows re-acquisition after the lock expires", async () => {
     const store = createMemoryStore({ versions: [version] });
     const run = await store.createRun({ workflowVersionId: "wv1", input: {} });
-    await store.acquireLock(run.id, "token-a", new Date(Date.now() - 1000));
+    await store.acquireLock(run.id, "token-a", NOW, new Date(NOW.getTime() - 1000));
     expect(
-      await store.acquireLock(run.id, "token-b", new Date(Date.now() + 60_000)),
+      await store.acquireLock(run.id, "token-b", NOW, new Date(NOW.getTime() + 60_000)),
     ).toBe(true);
   });
 
   it("only releases the lock for the token that holds it", async () => {
     const store = createMemoryStore({ versions: [version] });
     const run = await store.createRun({ workflowVersionId: "wv1", input: {} });
-    await store.acquireLock(run.id, "token-a", new Date(Date.now() + 60_000));
+    const until = new Date(NOW.getTime() + 60_000);
+    await store.acquireLock(run.id, "token-a", NOW, until);
     await store.releaseLock(run.id, "token-b");
-    expect(
-      await store.acquireLock(run.id, "token-c", new Date(Date.now() + 60_000)),
-    ).toBe(false);
+    expect(await store.acquireLock(run.id, "token-c", NOW, until)).toBe(false);
     await store.releaseLock(run.id, "token-a");
-    expect(
-      await store.acquireLock(run.id, "token-c", new Date(Date.now() + 60_000)),
-    ).toBe(true);
+    expect(await store.acquireLock(run.id, "token-c", NOW, until)).toBe(true);
   });
 
   it("records step executions and returns them in creation order", async () => {

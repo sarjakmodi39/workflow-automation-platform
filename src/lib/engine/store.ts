@@ -88,10 +88,37 @@ export interface RunStore {
   getRun(runId: string): Promise<RunRecord | null>;
   updateRun(runId: string, patch: UpdateRunInput): Promise<RunRecord>;
 
-  /** Conditional acquire. Returns false when another worker holds the lock. */
-  acquireLock(runId: string, token: string, until: Date): Promise<boolean>;
+  /**
+   * Conditional acquire. Returns false when another worker holds an unexpired
+   * lock. `now` is supplied by the caller so no implementation reads an ambient
+   * clock — otherwise a runner driven by an injected clock writes `lockedUntil`
+   * on one timeline and the store judges expiry on another, and the lock stops
+   * being a lock. Task 12 renders this as a single conditional UPDATE:
+   *   SET lockToken = $token, lockedUntil = $until
+   *   WHERE id = $id AND (lockToken IS NULL OR lockedUntil <= $now)
+   */
+  acquireLock(
+    runId: string,
+    token: string,
+    now: Date,
+    until: Date,
+  ): Promise<boolean>;
   releaseLock(runId: string, token: string): Promise<void>;
 
+  /**
+   * Every attempt for the run, in creation order — oldest first.
+   *
+   * The ordering is load-bearing, not cosmetic: the runner decides whether a
+   * step is already done by taking the *last* row for each stepId, so that a
+   * later SUCCEEDED attempt supersedes an earlier FAILED one. If a stale
+   * FAILED row sorts after the SUCCEEDED one that replaced it, the runner
+   * re-executes a step it has already completed.
+   *
+   * Task 12 must therefore order by creation time *with a deterministic
+   * tiebreak* — `startedAt`, then `attempt`, then `id` — because two attempts
+   * can land on the same timestamp and an unstable sort would make the skip
+   * rule flap between runs.
+   */
   listStepExecutions(runId: string): Promise<StepExecutionRecord[]>;
   createStepExecution(input: CreateStepExecutionInput): Promise<StepExecutionRecord>;
   updateStepExecution(

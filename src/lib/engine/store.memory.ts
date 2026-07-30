@@ -80,13 +80,21 @@ export class MemoryRunStore implements RunStore {
     return { ...run };
   }
 
-  async acquireLock(runId: string, token: string, until: Date): Promise<boolean> {
+  // `now` comes from the caller, never from Date.now(): the runner takes its
+  // clock from RunnerDeps, and a store that judged expiry on the ambient clock
+  // would treat every lock written on an injected timeline as already stale.
+  async acquireLock(
+    runId: string,
+    token: string,
+    now: Date,
+    until: Date,
+  ): Promise<boolean> {
     const run = this.runs.get(runId);
     if (!run) throw new NotFoundError(`Run ${runId}`);
     const held =
       run.lockToken !== null &&
       run.lockedUntil !== null &&
-      run.lockedUntil.getTime() > Date.now();
+      run.lockedUntil.getTime() > now.getTime();
     if (held) return false;
     run.lockToken = token;
     run.lockedUntil = until;
@@ -104,6 +112,9 @@ export class MemoryRunStore implements RunStore {
     run.lockedUntil = null;
   }
 
+  // Insertion order into `this.steps` is creation order, which is exactly the
+  // ordering the interface requires — the runner's skip rule reads the last row
+  // per stepId. Task 12 has to reproduce it with an explicit, tiebroken orderBy.
   async listStepExecutions(runId: string): Promise<StepExecutionRecord[]> {
     return this.steps.filter((s) => s.runId === runId).map((s) => ({ ...s }));
   }
