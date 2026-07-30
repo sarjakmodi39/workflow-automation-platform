@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fail, statusForError } from "@/lib/api";
+import { z } from "zod";
+import { fail, parseJsonBody, statusForError } from "@/lib/api";
 import {
   AppError,
   ConflictError,
@@ -116,5 +117,54 @@ describe("fail", () => {
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     fail(new NotFoundError("Run r1"));
     expect(logged).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * `parseJsonBody` is what makes a malformed body a 400 rather than a 500: a bare
+ * `schema.parse(await request.json())` lets a SyntaxError escape as an
+ * unclassified throw, which the generic handler reports as a server fault. The
+ * routes all depend on that distinction and none of them re-implement it.
+ */
+describe("parseJsonBody", () => {
+  const schema = z.object({ name: z.string().min(1) });
+
+  function body(text: string): Request {
+    return new Request("http://test/api", { method: "POST", body: text });
+  }
+
+  it("returns the parsed value for a valid body", async () => {
+    const parsed = await parseJsonBody(body('{"name":"invoice review"}'), schema);
+    expect(parsed).toEqual({ name: "invoice review" });
+  });
+
+  it("raises a ValidationError, not a SyntaxError, for unparseable JSON", async () => {
+    await expect(parseJsonBody(body("{not json"), schema)).rejects.toBeInstanceOf(
+      ValidationError,
+    );
+    // The distinction that matters: a client fault must not reach the generic
+    // 500 path, so the status has to resolve to 400.
+    const error = await parseJsonBody(body("{not json"), schema).catch((e) => e);
+    expect(statusForError(error)).toBe(400);
+  });
+
+  it("reports each schema issue with the path it belongs to", async () => {
+    const error = await parseJsonBody(body('{"name":""}'), schema).catch((e) => e);
+    expect(error).toBeInstanceOf(ValidationError);
+    const details = (error as ValidationError).details as {
+      issues: { path: string; message: string }[];
+    };
+    expect(details.issues).toHaveLength(1);
+    expect(details.issues[0].path).toBe("name");
+    expect(statusForError(error)).toBe(400);
+  });
+
+  it("strips keys the schema does not declare", async () => {
+    const parsed = await parseJsonBody(
+      body('{"name":"ok","injected":"ignored"}'),
+      schema,
+    );
+    expect(parsed).toEqual({ name: "ok" });
+    expect("injected" in (parsed as object)).toBe(false);
   });
 });

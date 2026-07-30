@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { fail, ok, parseJsonBody } from "@/lib/api";
+import {
+  fail,
+  ok,
+  parseJsonBody,
+  publicRun,
+} from "@/lib/api";
 import { createRunnerDeps } from "@/lib/engine/deps";
 import { decideApproval } from "@/lib/engine/runner";
 
@@ -37,7 +42,7 @@ export async function POST(
       body.decision,
       body.reason ?? null,
     );
-    return ok({ run });
+    return ok({ run: publicRun(run) });
   } catch (e) {
     return fail(e);
   }

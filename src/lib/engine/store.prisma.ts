@@ -56,14 +56,14 @@ import type {
  * for an absent payload. `undefined` is folded into null on the way in so a
  * record can never come back holding `undefined` where memory holds `null`.
  */
-function nullableJson(
+export function nullableJson(
   value: unknown,
 ): Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput {
   if (value === null || value === undefined) return Prisma.DbNull;
   return value as Prisma.InputJsonValue;
 }
 
-function requiredJson(
+export function requiredJson(
   value: unknown,
 ): Prisma.InputJsonValue | Prisma.JsonNullValueInput {
   if (value === null || value === undefined) return Prisma.JsonNull;

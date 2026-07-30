@@ -173,3 +173,22 @@ export function toWorkflowDefinition(
   }));
   return { steps } as WorkflowDefinition;
 }
+
+/**
+ * Strips a run's lock bookkeeping before it goes over the wire.
+ *
+ * `lockToken` and `lockedUntil` are how the engine arbitrates which worker may
+ * execute a step. They are internal coordination state, and there is no
+ * authentication in front of these routes, so returning a raw `Run` row
+ * publishes the live token of every listed run. No endpoint accepts a token
+ * today, so possessing one grants nothing — but the moment any worker-facing
+ * endpoint did, a published token would make it forgeable. The store already
+ * maps rows field by field for this reason; this keeps the route layer honest
+ * about the same boundary.
+ */
+export function publicRun<T extends { lockToken?: unknown; lockedUntil?: unknown }>(
+  run: T,
+): Omit<T, "lockToken" | "lockedUntil"> {
+  const { lockToken: _lockToken, lockedUntil: _lockedUntil, ...rest } = run;
+  return rest;
+}

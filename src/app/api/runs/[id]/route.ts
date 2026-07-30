@@ -1,4 +1,4 @@
-import { fail, ok } from "@/lib/api";
+import { fail, ok, publicRun } from "@/lib/api";
 import { prisma } from "@/lib/db";
 import { NotFoundError } from "@/lib/errors";
 
@@ -23,18 +23,25 @@ export async function GET(
       include: {
         workflowVersion: { include: { workflow: true } },
         stepExecutions: {
-          orderBy: [{ startedAt: "asc" }, { attempt: "asc" }],
+          // The same three-key ordering the RunStore contract requires. Two
+          // attempts can share a millisecond, and without the `id` tiebreak they
+          // present in either order between refreshes.
+          orderBy: [
+            { startedAt: { sort: "asc", nulls: "first" } },
+            { attempt: "asc" },
+            { id: "asc" },
+          ],
           include: { approval: true },
         },
-        auditEvents: { orderBy: { createdAt: "asc" } },
-        llmCalls: { orderBy: { createdAt: "asc" } },
+        auditEvents: { orderBy: [{ createdAt: "asc" }, { id: "asc" }] },
+        llmCalls: { orderBy: [{ createdAt: "asc" }, { id: "asc" }] },
       },
     });
 
     if (!run) throw new NotFoundError(`Run ${id}`);
 
     return ok({
-      run,
+      run: publicRun(run),
       workflow: run.workflowVersion.workflow,
       version: run.workflowVersion,
       steps: run.stepExecutions,

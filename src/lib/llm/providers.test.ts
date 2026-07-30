@@ -516,6 +516,10 @@ describe("OpenRouterProvider", () => {
     const provider = new OpenRouterProvider({ apiKey: secret, fetchImpl });
     await provider.complete(REQ);
 
+    // The negative assertions alone would also pass if the key were never sent
+    // at all, so the header is asserted positively too.
+    const headers = calls[0].init.headers as Record<string, string>;
+    expect(headers.authorization).toBe(`Bearer ${secret}`);
     expect(calls[0].url).not.toContain(secret);
     expect(calls[0].init.body).not.toContain(secret);
   });

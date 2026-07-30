@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { fail, ok, parseJsonBody } from "@/lib/api";
+import {
+  fail,
+  ok,
+  parseJsonBody,
+  publicRun,
+} from "@/lib/api";
 import { createRunnerDeps } from "@/lib/engine/deps";
 import { retryStep } from "@/lib/engine/runner";
 
@@ -29,7 +34,7 @@ export async function POST(
     const body = await parseJsonBody(request, retryBodySchema);
 
     const run = await retryStep(createRunnerDeps(), id, body.stepExecutionId);
-    return ok({ run });
+    return ok({ run: publicRun(run) });
   } catch (e) {
     return fail(e);
   }

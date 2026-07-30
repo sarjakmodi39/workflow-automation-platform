@@ -35,12 +35,29 @@ const TERMINAL: RunRecord["status"][] = ["COMPLETED", "FAILED", "CANCELLED"];
  */
 const RESUMABLE: RunRecord["status"][] = ["PENDING", "RUNNING", "FAILED"];
 
-/** Latest attempt per step id, in creation order. */
+/**
+ * Highest-numbered attempt per step id.
+ *
+ * Deliberately keyed on `attempt` rather than on position in the list. Taking
+ * the last row would make the skip-succeeded-steps rule depend on
+ * `listStepExecutions` ordering, and that ordering is by `startedAt`, which is
+ * stamped from whichever application instance created the row. Two instances
+ * with skewed clocks can therefore emit a later attempt with an earlier
+ * timestamp — and then a stale FAILED row wins, the rule stops recognising the
+ * step as done, and it re-executes. For `mock_external_action` that means only
+ * the idempotency ledger stands between a resume and a duplicate write.
+ *
+ * `attempt` is monotonic per step and unique per `(runId, stepId)` by schema
+ * constraint, so this needs no clock at all.
+ */
 function latestByStep(
   steps: StepExecutionRecord[],
 ): Map<string, StepExecutionRecord> {
   const map = new Map<string, StepExecutionRecord>();
-  for (const s of steps) map.set(s.stepId, s);
+  for (const s of steps) {
+    const seen = map.get(s.stepId);
+    if (!seen || s.attempt >= seen.attempt) map.set(s.stepId, s);
+  }
   return map;
 }
 
@@ -472,7 +489,29 @@ export async function advanceRun(
   try {
     return await drive(deps, runId);
   } finally {
+    await releaseQuietly(deps, runId, token);
+  }
+}
+
+/**
+ * Releases the run lock without letting a persistence fault replace the error
+ * the caller is already carrying.
+ *
+ * `releaseLock` is awaited in a `finally`, so a throw there would discard the
+ * exception from `drive` — turning, say, a `ConflictError` that belongs to the
+ * client as a 409 into an opaque 500. The lease is the real backstop: an
+ * unreleased lock expires at `lockedUntil` on its own, so failing to release is
+ * a delay, not a loss of correctness.
+ */
+async function releaseQuietly(
+  deps: RunnerDeps,
+  runId: string,
+  token: string,
+): Promise<void> {
+  try {
     await deps.store.releaseLock(runId, token);
+  } catch {
+    // Intentionally swallowed; see above. The lock expires on its own.
   }
 }
 
@@ -671,6 +710,6 @@ export async function retryStep(
 
     return await drive(deps, runId);
   } finally {
-    await deps.store.releaseLock(runId, token);
+    await releaseQuietly(deps, runId, token);
   }
 }

@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { fail, ok, parseJsonBody } from "@/lib/api";
+import {
+  fail,
+  ok,
+  parseJsonBody,
+  publicRun,
+} from "@/lib/api";
 import { prisma } from "@/lib/db";
 import { createRunnerDeps } from "@/lib/engine/deps";
 import { advanceRun, startRun } from "@/lib/engine/runner";
@@ -21,7 +26,7 @@ export async function GET() {
         workflowVersion: { include: { workflow: { select: { name: true } } } },
       },
     });
-    return ok({ runs });
+    return ok({ runs: runs.map(publicRun) });
   } catch (e) {
     return fail(e);
   }
@@ -37,7 +42,7 @@ export async function POST(request: Request) {
     const created = await startRun(deps, body.workflowVersionId, body.input ?? {});
     const run = await advanceRun(deps, created.id);
 
-    return ok({ run }, 201);
+    return ok({ run: publicRun(run) }, 201);
   } catch (e) {
     return fail(e);
   }

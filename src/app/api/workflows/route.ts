@@ -7,6 +7,7 @@ import {
   toWorkflowDefinition,
 } from "@/lib/api";
 import { prisma } from "@/lib/db";
+import { requiredJson } from "@/lib/engine/store.prisma";
 import { validateWorkflow } from "@/lib/engine/validator";
 import { ValidationError } from "@/lib/errors";
 
@@ -19,11 +20,15 @@ const createBodySchema = definitionBodySchema.extend({
 
 export async function GET() {
   try {
+    // Bounded deliberately. An unbounded list grows without limit and the
+    // response is rendered by the home page; the runs list caps the same way.
     const workflows = await prisma.workflow.findMany({
       orderBy: { createdAt: "desc" },
+      take: 50,
       include: {
         versions: {
           orderBy: { version: "desc" },
+          take: 20,
           select: { id: true, version: true, createdAt: true },
         },
       },
@@ -54,8 +59,8 @@ export async function POST(request: Request) {
         versions: {
           create: {
             version: 1,
-            definition: definition as never,
-            grantedPermissions: grants as never,
+            definition: requiredJson(definition),
+            grantedPermissions: requiredJson(grants),
           },
         },
       },

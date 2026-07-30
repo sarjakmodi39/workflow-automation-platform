@@ -115,9 +115,44 @@ export const DEFAULT_LLM_TIMEOUT_MS = 15_000;
  *   succeed, and it spends the run's LLM call budget to arrive at the same
  *   answer more slowly.
  */
-export function httpError(provider: string, status: number): AppError {
+export function httpError(
+  provider: string,
+  status: number,
+  detail?: string,
+): AppError {
   if (status === 429) return new RateLimitError(provider);
-  return new ProviderError(provider, `HTTP ${status}`, status >= 500);
+  const suffix = detail ? `: ${detail}` : "";
+  return new ProviderError(provider, `HTTP ${status}${suffix}`, status >= 500);
+}
+
+/** Longest error detail kept from a provider body. */
+const MAX_DETAIL = 300;
+
+/**
+ * A redacted, truncated slice of an error response body.
+ *
+ * Without it a 4xx is recorded as bare `HTTP 400`, which is undiagnosable — a
+ * bad model name, an unsupported response schema and a malformed request all
+ * look identical in the ledger, and 4xx is not retryable so there is no second
+ * attempt to learn from. The body is redacted before it is kept because these
+ * messages are persisted to `LlmCall.error` and rendered to a reviewer, and it
+ * is truncated because a provider may return an HTML error page.
+ */
+async function errorDetail(
+  response: Response,
+  redact: (message: string) => string,
+): Promise<string | undefined> {
+  try {
+    const text = (await response.text()).trim();
+    if (!text) return undefined;
+    const flattened = redact(text).replace(/\s+/g, " ");
+    return flattened.length > MAX_DETAIL
+      ? `${flattened.slice(0, MAX_DETAIL)}...`
+      : flattened;
+  } catch {
+    // The body is a nicety; never let reading it mask the status we already have.
+    return undefined;
+  }
 }
 
 /**
@@ -163,7 +198,13 @@ export async function postJson(req: PostJsonRequest): Promise<unknown> {
       signal: controller.signal,
     });
 
-    if (!response.ok) throw httpError(req.provider, response.status);
+    if (!response.ok) {
+      throw httpError(
+        req.provider,
+        response.status,
+        await errorDetail(response, req.redact),
+      );
+    }
     return await response.json();
   } catch (e) {
     // Already classified above — pass it through unchanged.

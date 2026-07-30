@@ -1,4 +1,8 @@
-import { fail, ok } from "@/lib/api";
+import {
+  fail,
+  ok,
+  publicRun,
+} from "@/lib/api";
 import { createRunnerDeps } from "@/lib/engine/deps";
 import { cancelRun } from "@/lib/engine/runner";
 
@@ -17,7 +21,7 @@ export async function POST(
   try {
     const { id } = await params;
     const run = await cancelRun(createRunnerDeps(), id);
-    return ok({ run });
+    return ok({ run: publicRun(run) });
   } catch (e) {
     return fail(e);
   }
