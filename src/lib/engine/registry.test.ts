@@ -69,6 +69,34 @@ describe("step registry", () => {
     expect(errors[0]).toContain("at least one field");
   });
 
+  it("rejects an extraction field the AI response schema cannot describe", () => {
+    // A one-level JsonShape cannot express element types, and Gemini rejects an
+    // ARRAY with no `items` as a non-retryable 400. Better to refuse the
+    // workflow when it is saved than to fail a run with a model-API complaint.
+    const errors = REGISTRY.ai_extraction.validateConfig({
+      source: "$.steps.retrieve.documents",
+      fields: [
+        { name: "amount", kind: "number" },
+        { name: "lineItems", kind: "array" },
+      ],
+    });
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("lineItems");
+    expect(errors[0]).toContain("cannot be a array");
+  });
+
+  it("accepts scalar extraction fields", () => {
+    const errors = REGISTRY.ai_extraction.validateConfig({
+      source: "$.steps.retrieve.documents",
+      fields: [
+        { name: "amount", kind: "number" },
+        { name: "vendor", kind: "string" },
+        { name: "urgent", kind: "boolean" },
+      ],
+    });
+    expect(errors).toEqual([]);
+  });
+
   it("reports a config error when classification declares fewer than two labels", () => {
     const errors = REGISTRY.ai_classification.validateConfig({ labels: ["only"] });
     expect(errors.length).toBeGreaterThan(0);
