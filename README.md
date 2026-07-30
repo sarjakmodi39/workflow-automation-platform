@@ -12,7 +12,12 @@ The design goal was auditability over autonomy: at any point you should be able 
 
 ## Live application
 
-_TODO: paste the deployed Vercel URL here._
+**https://workflow-automation-platform-nine.vercel.app**
+
+No credentials are needed. Three workflows are seeded; start with **Vendor Onboarding
+Review**, which runs to completion without a human. Sample input is prefilled on every
+workflow page — the document corpus knows two vendors, `Globex Industrial` (high risk) and
+`Acme Supplies` (low risk), and they take different branches.
 
 ## Setup
 

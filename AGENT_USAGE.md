@@ -249,5 +249,13 @@ input; a transient provider fault producing an automatic retry and a recoverable
 and a simulated crash after an external write resuming to `duplicatePrevented: true` against
 the original ledger reference rather than issuing a second payment.
 
-The remaining honest gap: the application has not yet been exercised *as deployed*. Everything
-above ran against the production database from a local process.
+That gap is now closed too. The same scenarios were re-run against the deployed application
+on Vercel rather than from a local process: a run completing unattended with two live Gemini
+calls returning the corpus-correct extraction, an approval gate halting a run and completing
+it on approval with the external action written exactly once, and the execution-time
+permission check failing a step the API would never have allowed to be saved.
+
+That last step was worth doing rather than assuming. Deployment is where the `maxDuration`
+defect would have surfaced and nowhere else — it works locally by construction — and a
+deployed build is the first time the provider chain, the database connection and the tick
+loop run together under the constraints they will actually face.
