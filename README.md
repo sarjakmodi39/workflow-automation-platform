@@ -176,7 +176,7 @@ rather than a runtime guard.
 | Requirement | Mechanism |
 |---|---|
 | Validate before execution | `validator.ts` checks step types, config, permission grants, source-path references, branch targets, and forward-only termination. A version that fails is refused at save time, not discovered mid-run |
-| Store and compare versions | `WorkflowVersion` rows are immutable and never updated; every version is listed and individually inspectable, and a run is pinned to the version it started on |
+| Store and compare versions | `WorkflowVersion` rows are immutable and never updated, and a run is pinned to the version it started on. The compare panel diffs any two versions field by field — matching steps by id so an inserted step does not read as a rewrite, ignoring key order so a re-serialised definition is not a false change, and calling out permission-grant changes separately |
 | Display steps and current state | The run detail page renders the timeline from `StepExecution` rows and advances via the tick loop while the run is active |
 | Pass structured output between steps | Step output is persisted and referenced by later steps as `$.steps.<id>.<field>`; the validator rejects a path pointing at a nonexistent or later step |
 | Pause for approval | The runner intercepts approval gates before the handler runs, sets `AWAITING_APPROVAL`, and stops. `POST /approve` records the decision and resumes |
@@ -284,9 +284,9 @@ UI tests written for this document's own feature set.
 6. **Progress advances via client-driven ticks, not a background worker.** A closed browser
    tab means a `RUNNING` run stops advancing until someone opens it again. This is a
    deliberate consequence of serverless hosting, and the reason run state is fully durable.
-7. **No side-by-side version diff view.** Versions are immutable and every version is
-   listed and individually inspectable, but comparing two of them field by field is left to
-   reading the two definitions.
+7. **The version diff compares definitions, not run outcomes.** Two versions are compared
+   field by field, including permission grants, but the view does not predict how a given
+   input would decide differently under each — that is shown by running both.
 8. **The Prisma store and the API routes have no unit tests.** Both are thin adapters whose
    meaningful behaviour is covered through the in-memory store, and testing them properly
    needs a live database. The type checker and manual verification cover them instead. This

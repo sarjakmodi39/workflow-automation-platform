@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { RunLauncher } from "@/app/workflows/[id]/RunLauncher";
+import { VersionCompare } from "@/app/workflows/[id]/VersionCompare";
 import { ApiErrorNotice } from "@/components/ApiErrorNotice";
 import { Command, EmptyState } from "@/components/EmptyState";
 import { InlineLoading } from "@/components/Loading";
@@ -192,6 +193,8 @@ function VersionView({
           })}
         </ul>
       </Section>
+
+      <VersionCompare versions={versions} />
 
       <Section
         title="Pre-execution validation"
