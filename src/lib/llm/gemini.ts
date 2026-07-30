@@ -263,7 +263,27 @@ export class GeminiProvider implements LlmProvider {
    */
   constructor(options: GeminiOptions = {}) {
     this.apiKey = (options.apiKey ?? process.env.GEMINI_API_KEY ?? "").trim();
-    this.model = options.model ?? process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
+    /*
+     * Two properties are being bought here, both learned the hard way against
+     * the live API rather than from the docs.
+     *
+     * *Floating alias, not a pinned version.* `gemini-2.5-flash` was the default
+     * until Google began answering it with 404 "no longer available to new
+     * users" — a non-retryable ProviderError, so every AI step failed outright.
+     * An alias keeps resolving as versions are retired.
+     *
+     * *`flash-lite`, not `flash`.* `gemini-flash-latest` resolves to a thinking
+     * model: measured here at 179 thinking tokens for 36 output tokens, with
+     * latency swinging between 10s and 25s, which overruns the 15s timeout
+     * below often enough to fail runs. It is also capped at 20 requests per day
+     * on the free tier, which a single reviewer would exhaust in two runs. The
+     * lite alias spends no thinking tokens and answers this workload in about a
+     * second — and these steps classify into two labels and extract scalar
+     * fields, so there is nothing for extended reasoning to buy.
+     *
+     * Override with GEMINI_MODEL to pin a specific version.
+     */
+    this.model = options.model ?? process.env.GEMINI_MODEL ?? "gemini-flash-lite-latest";
     // Resolved per call rather than captured, so a stubbed `globalThis.fetch`
     // is honoured regardless of when the provider was constructed.
     this.fetchImpl =
