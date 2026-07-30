@@ -10,14 +10,8 @@ import type {
   StepType,
 } from "@/lib/types";
 
-/*
- * One step of a workflow definition, rendered for someone who has not read the
- * code.
- *
- * Type labels, descriptions and retry safety all come from `REGISTRY`. There is
- * no second table of step types here: a copy would keep rendering "safe to
- * retry" for a step the engine had since made unsafe.
- */
+/* One step of a definition, for someone who has not read the code. Labels and retry safety
+ * come from `REGISTRY`: a second table would render "safe to retry" after the engine changed. */
 
 /* -------------------------------------------------------------------------- */
 /* Conditions                                                                 */
@@ -142,13 +136,8 @@ function ConfigValue({ value }: { value: unknown }) {
   return <JsonBlock value={value} />;
 }
 
-/**
- * Renders whatever the config holds, keyed by its own field names.
- *
- * Generic on purpose. A per-step-type summariser would be a second description
- * of every step type living outside the registry, and it would silently omit
- * any field a future step type added.
- */
+/** Renders whatever the config holds, keyed by its own field names. Generic on purpose: a
+ *  per-type summariser would live outside the registry and omit any new field. */
 function ConfigSummary({
   config,
   omit = [],

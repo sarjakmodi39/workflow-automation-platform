@@ -1,11 +1,5 @@
-/**
- * Loading indicators.
- *
- * The skeleton rows deliberately mirror the height and padding of the real
- * rows they stand in for, so arriving data replaces them without the list
- * jumping. Each indicator is announced: a screen reader hears "Loading
- * workflows" rather than silence.
- */
+/** Loading indicators. Skeletons mirror the real rows' height and padding so arriving data
+ *  does not make the list jump, and each is announced rather than silent. */
 
 export function Spinner({ className = "" }: { className?: string }) {
   return (

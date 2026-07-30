@@ -23,20 +23,22 @@ import type { StepDefinition } from "@/lib/types";
  * created run (go and watch it).
  */
 
-/**
- * Example values for the field names the seeded document corpus is written
- * around. `amount` is deliberately above the 5000 auto-approval threshold in
- * the seeded policy documents, so the default input reaches the approval gate
- * instead of skipping past it. Any field name not listed gets a placeholder of
- * the right type.
- */
+/** Example values for the field names the seeded corpus is written around. Every declared
+ *  field needs one: an empty prefill leaves a reviewer guessing what to type. */
 const EXAMPLE_VALUES: Record<string, unknown> = {
   invoiceId: "INV-2026-0099",
-  vendor: "Globex Industrial",
+  // Above the 5000 threshold on purpose, so the default input reaches the gate.
   amount: 7400,
+  vendor: "Globex Industrial",
   currency: "USD",
   description: "Replacement conveyor motors",
+  country: "Germany",
+  requestedBy: "procurement@example.com",
 };
+
+/** Vendors the seeded corpus can retrieve. Any other name returns no documents, so the
+ *  AI step has nothing to read and fails — worth saying before a run, not after. */
+const KNOWN_VENDORS = ["Globex Industrial", "Acme Supplies"];
 
 function placeholderFor(kind: unknown): unknown {
   switch (kind as FieldKind) {
@@ -122,6 +124,25 @@ export function RunLauncher({
   // Live, so the reader is not told about a typo only after pressing the button.
   const parsed = useMemo(() => parseInput(text), [text]);
 
+  const declaresVendor = useMemo(
+    () =>
+      steps.some(
+        (s) =>
+          s.type === "structured_input" &&
+          Array.isArray(s.config?.fields) &&
+          (s.config.fields as { name?: unknown }[]).some((f) => f?.name === "vendor"),
+      ),
+    [steps],
+  );
+
+  // Swaps the vendor without making the reader hand-edit JSON, which is where a
+  // stray quote turns a demo into a debugging session.
+  function useVendor(vendor: string) {
+    if (!parsed.ok) return;
+    setText(JSON.stringify({ ...parsed.value, vendor }, null, 2));
+    setInvalidInput(null);
+  }
+
   async function start() {
     if (!parsed.ok) {
       setInvalidInput(parsed.message);
@@ -183,6 +204,26 @@ export function RunLauncher({
       <p className="mt-1 text-xs text-slate-500">
         {parsed.ok ? "Valid JSON object." : "Not a valid JSON object yet."}
       </p>
+
+      {declaresVendor ? (
+        <p className="mt-2 rounded-md border border-slate-200 bg-slate-50 p-2.5 text-xs text-slate-600">
+          The document corpus knows two vendors:{" "}
+          {KNOWN_VENDORS.map((v, i) => (
+            <span key={v}>
+              {i > 0 ? " and " : ""}
+              <button
+                type="button"
+                onClick={() => useVendor(v)}
+                className="font-mono font-medium text-blue-700 underline underline-offset-2 hover:text-blue-900"
+              >
+                {v}
+              </button>
+            </span>
+          ))}
+          . Globex is rated high risk and Acme low, so they take different
+          branches. Any other name retrieves nothing and the AI step will fail.
+        </p>
+      ) : null}
 
       {invalidInput ? (
         <p

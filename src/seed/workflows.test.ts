@@ -3,15 +3,8 @@ import { SEED_WORKFLOWS } from "@/seed/workflows";
 import { validateWorkflow } from "@/lib/engine/validator";
 import type { StepDefinition } from "@/lib/types";
 
-/*
- * The seed is the first thing a reviewer touches, so a broken fixture is a
- * broken first impression — and it would only surface against a live database,
- * which is exactly where it is least convenient to find out.
- *
- * `validateWorkflow` is the same function the create-workflow route runs before
- * it persists anything, so asserting the fixtures against it here is asserting
- * that the seed could not write a version the API would have refused.
- */
+/* A broken fixture would surface only against a live database. `validateWorkflow` is what the
+ * create route runs, so this asserts the seed cannot write what the API would refuse. */
 
 interface FieldSpec {
   name: string;
@@ -34,9 +27,8 @@ function kindMatches(value: unknown, kind: string): boolean {
 
 describe("seed workflows", () => {
   it("seeds at least one workflow that needs no human to reach a terminal state", () => {
-    // A reviewer with no context should be able to press Run once and watch a
-    // run complete. If every fixture halted at a gate, nothing would prove the
-    // engine finishes.
+    // A reviewer should be able to press Run once and watch it complete; if every
+    // fixture halted at a gate, nothing would prove the engine finishes.
     const unattended = SEED_WORKFLOWS.filter((w) =>
       w.versions.every((v) =>
         v.definition.steps.every((s) => s.type !== "human_approval"),
@@ -68,9 +60,8 @@ describe("seed workflows", () => {
         return;
       }
 
-      // Invalid *for the stated reason*. A fixture that became invalid for some
-      // other reason would otherwise keep passing and stop demonstrating the
-      // thing it exists to demonstrate.
+      // Invalid *for the stated reason*: one that broke some other way would keep
+      // passing while no longer demonstrating anything.
       expect(issues.length).toBeGreaterThan(0);
       expect(new Set(issues.map((i) => i.code))).toEqual(
         new Set([version.expectInvalid]),

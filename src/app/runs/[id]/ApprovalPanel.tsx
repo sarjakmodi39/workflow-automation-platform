@@ -5,23 +5,8 @@ import { JsonBlock } from "@/components/JsonBlock";
 import { Spinner } from "@/components/Loading";
 import type { StepExecutionRow } from "@/lib/client-api";
 
-/*
- * The human approval gate.
- *
- * This is the one place in the product where a person, not the engine, decides
- * what happens next, so it is rendered as a decision to be made rather than as
- * two buttons on a card:
- *
- *   - What the AI concluded is shown *before* the controls. Approving without
- *     seeing the model's output would make the gate ceremonial.
- *   - The reason is captured from the reviewer instead of being filled in with a
- *     fixed string. The reason is written to the `Approval` row and the audit
- *     trail, and "Approved from run detail view" recorded against every decision
- *     is an audit trail that documents nothing.
- *   - Rejection is confirmed in a second step, because it is irreversible. A
- *     rejected run is CANCELLED permanently: it cannot be resumed and its steps
- *     cannot be retried. A mis-click must not be able to do that.
- */
+/* The one place a person, not the engine, decides. Evidence before controls, a reason the
+ * reviewer writes, and a second press to reject — a rejected run is CANCELLED for good. */
 
 /* -------------------------------------------------------------------------- */
 /* The two-stage rejection rule                                               */
@@ -30,19 +15,8 @@ import type { StepExecutionRow } from "@/lib/client-api";
 /** `deciding`: the initial choice. `confirming`: rejection has been asked for. */
 export type RejectStage = "deciding" | "confirming";
 
-/**
- * What a press of a Reject button does, given the stage.
- *
- * This exists as a function rather than as two differently-wired buttons so
- * that "rejecting always takes a second, deliberate press" is a fact the test
- * suite can hold onto, instead of an arrangement of JSX that a later refactor
- * could quietly collapse into one click. Both buttons route through it, so
- * there is one place the rule lives.
- *
- * Its limit is worth stating: this proves the rule, not the wiring. Asserting
- * that the button is actually connected to it would need click simulation, and
- * so a DOM test dependency this project deliberately does not have.
- */
+/** What a Reject press does, as a function so the two-press rule is testable rather than an
+ *  arrangement of JSX. Proves the rule, not the wiring — that would need click simulation. */
 export function pressReject(stage: RejectStage): "confirm" | "submit" {
   return stage === "deciding" ? "confirm" : "submit";
 }

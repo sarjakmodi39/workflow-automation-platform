@@ -38,24 +38,8 @@ import type {
 /* JSON boundary                                                              */
 /* -------------------------------------------------------------------------- */
 
-/**
- * A JSON column is untyped in the database, so the engine's record types carry
- * `unknown` for every JSON payload. Prisma's `InputJsonValue` cannot express
- * `unknown`, so a cast is structurally unavoidable on the way in. Both casts
- * live here, in these two functions, and nowhere else in this file: every
- * *field* mapping below stays fully type-checked against the generated client,
- * which is what catches a mis-mapped column.
- *
- * Nullable and non-nullable JSON columns need different null sentinels:
- *
- *   - Nullable column (`Json?`): `Prisma.DbNull` writes a real SQL NULL.
- *   - Non-nullable column (`Json`): SQL NULL is not permitted, so the only
- *     available null is `Prisma.JsonNull` — the JSON value `null`.
- *
- * Both read back as JavaScript `null`, which is what `MemoryRunStore` stores
- * for an absent payload. `undefined` is folded into null on the way in so a
- * record can never come back holding `undefined` where memory holds `null`.
- */
+/** The file's only JSON casts. `Json?` takes DbNull (real SQL NULL), `Json` takes
+ *  JsonNull; both read back as `null`, matching MemoryRunStore for an absent payload. */
 export function nullableJson(
   value: unknown,
 ): Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput {
@@ -80,18 +64,8 @@ function toPermissions(value: Prisma.JsonValue): string[] {
 /* Error translation                                                          */
 /* -------------------------------------------------------------------------- */
 
-/**
- * Callers must see one error taxonomy regardless of which store is behind the
- * interface, because the engine tests only ever exercise `MemoryRunStore`.
- * Only the two codes the interface actually has semantics for are translated:
- *
- *   P2002 — unique constraint violation  -> ConflictError
- *   P2025 — record required but not found -> NotFoundError
- *
- * Anything else propagates untouched. Inventing a domain error for, say, a
- * foreign-key violation would claim a parity with the memory store that does
- * not exist (see the constraint audit in the task report).
- */
+/** One error taxonomy whichever store is behind the interface. Only P2002 -> Conflict
+ *  and P2025 -> NotFound are translated; anything else propagates untouched. */
 function isPrismaError(
   error: unknown,
   code: string,
@@ -103,22 +77,16 @@ function isPrismaError(
 /* Row -> record mapping                                                      */
 /* -------------------------------------------------------------------------- */
 
-/*
- * Every row is mapped field by field rather than returned raw. Two reasons:
- * a raw row carries relation scalars the engine has no business seeing, and
- * `stepType` / `type` are `String` columns that have to be narrowed to their
- * domain unions — silently returning the row would leave those unions unproven.
- */
+/* Rows are mapped field by field, never returned raw: a raw row leaks relation scalars,
+ * and `stepType` / `type` are String columns needing narrowing to their domain unions. */
 
 function toWorkflowVersion(row: WorkflowVersionRow): WorkflowVersionRecord {
   return {
     id: row.id,
     workflowId: row.workflowId,
     version: row.version,
-    // The one shape assertion in this file. A JSON column has no static type,
-    // and the definition is validated by `validateWorkflow` before a run is
-    // ever started, so this store does not re-validate (nor does the memory
-    // store, which holds an already-typed record).
+    // The one shape assertion here: a JSON column has no static type, and
+    // `validateWorkflow` already ran before any run started, so no re-validation.
     definition: row.definition as unknown as WorkflowDefinition,
     grantedPermissions: toPermissions(row.grantedPermissions),
     createdAt: row.createdAt,
@@ -215,16 +183,8 @@ function toExternalAction(row: ExternalActionRow): ExternalActionRecord {
 /* Store                                                                      */
 /* -------------------------------------------------------------------------- */
 
-/**
- * Production `RunStore`. Behaviour must match `MemoryRunStore` method for
- * method — including which calls throw and which are silent no-ops — because
- * the entire engine suite runs against the memory store and would otherwise be
- * verifying semantics this class does not have.
- *
- * Two operations rely on database guarantees rather than read-then-write, and
- * they are the reason this class exists at all: the conditional lock acquire
- * and the insert-if-absent for external actions.
- */
+/** Production `RunStore`; behaviour must match `MemoryRunStore` method for method, since
+ *  the engine suite runs against memory. Only the lock acquire and ledger insert need SQL. */
 export class PrismaRunStore implements RunStore {
   async getWorkflowVersion(id: string): Promise<WorkflowVersionRecord | null> {
     const row = await prisma.workflowVersion.findUnique({ where: { id } });
@@ -267,21 +227,8 @@ export class PrismaRunStore implements RunStore {
     }
   }
 
-  /**
-   * Conditional acquire, as a single UPDATE. `updateMany` is used rather than
-   * `update` precisely because it reports a row count instead of throwing on a
-   * no-match: the row count *is* the answer.
-   *
-   * The `where` clause is the exact negation of the memory store's `held`
-   * predicate (`lockToken !== null && lockedUntil !== null && lockedUntil >
-   * now`). The `lockedUntil: null` branch matters even though this store never
-   * writes that combination: without it, a row carrying a token but no expiry
-   * would be locked forever against Postgres while the memory store treats it
-   * as free — a stuck run that no test could ever reproduce.
-   *
-   * `lte`, not `lt`: the memory store frees the lock the instant
-   * `lockedUntil === now`.
-   */
+  /** Conditional acquire as one UPDATE; `updateMany` reports a row count instead of throwing,
+   *  and the `where` is the exact negation of the memory store's `held` predicate. */
   async acquireLock(
     runId: string,
     token: string,
@@ -301,14 +248,8 @@ export class PrismaRunStore implements RunStore {
     });
     if (result.count > 0) return true;
 
-    // A count of zero conflates "someone holds the lock" with "no such run",
-    // and the memory store distinguishes them: it throws NotFoundError for a
-    // missing run, and `retryStep` reports a busy run as a ConflictError, so
-    // collapsing the two would report a nonexistent run as merely busy.
-    //
-    // This extra read is not the read-then-write race the conditional UPDATE
-    // exists to prevent: the write has already been attempted and refused, and
-    // this only chooses between two ways of having failed.
+    // Zero conflates "locked" with "no such run", which the memory store distinguishes.
+    // Not a race: the write was already attempted and refused; this only names the failure.
     const exists = await prisma.run.findUnique({
       where: { id: runId },
       select: { id: true },
@@ -317,12 +258,8 @@ export class PrismaRunStore implements RunStore {
     return false;
   }
 
-  /**
-   * Deliberately asymmetric with `acquireLock`: release is idempotent, so a
-   * missing run or a token mismatch is a silent no-op rather than an error.
-   * Putting both `id` and `lockToken` in the `where` gets that for free — a
-   * non-matching token simply updates nothing.
-   */
+  /** Asymmetric with `acquireLock` by design: release is idempotent, so a missing run or
+   *  token mismatch is a silent no-op — both keys in the `where` gets that for free. */
   async releaseLock(runId: string, token: string): Promise<void> {
     await prisma.run.updateMany({
       where: { id: runId, lockToken: token },
@@ -330,20 +267,8 @@ export class PrismaRunStore implements RunStore {
     });
   }
 
-  /**
-   * Creation order, with the deterministic tiebreak the interface requires.
-   *
-   * The runner's skip rule takes the *last* row per `stepId`, so an unstable
-   * order here re-executes completed steps. `startedAt` alone is not enough:
-   * Prisma maps `DateTime` to millisecond precision, and two attempts of the
-   * same step routinely land in the same millisecond, so `attempt` and then
-   * `id` break the tie.
-   *
-   * `nulls: "first"` guards a row written outside this store (a seed script)
-   * with no `startedAt`: sorting such a row first means it can never mask the
-   * later SUCCEEDED attempt that supersedes it. Postgres would otherwise sort
-   * NULLs last in an ascending order and hand the runner the wrong row.
-   */
+  /** Creation order with a deterministic tiebreak: ms-precision timestamps collide, so
+   *  `attempt` then `id` break ties, and `nulls: "first"` keeps a null row from masking. */
   async listStepExecutions(runId: string): Promise<StepExecutionRecord[]> {
     const rows = await prisma.stepExecution.findMany({
       where: { runId },
@@ -356,11 +281,8 @@ export class PrismaRunStore implements RunStore {
     return rows.map(toStepExecution);
   }
 
-  /**
-   * `@@unique([runId, stepId, attempt])` is what makes attempt numbering safe.
-   * The memory store raises ConflictError on a clash; P2002 is the same event,
-   * so it becomes the same error rather than leaking a Prisma type to callers.
-   */
+  /** `@@unique([runId, stepId, attempt])` makes attempt numbering safe; P2002 becomes the
+   *  same ConflictError the memory store raises rather than leaking a Prisma type. */
   async createStepExecution(
     input: CreateStepExecutionInput,
   ): Promise<StepExecutionRecord> {
@@ -374,9 +296,8 @@ export class PrismaRunStore implements RunStore {
           attempt: input.attempt,
           retrySafe: input.retrySafe,
           input: nullableJson(input.input),
-          // `startedAt` has no database default, and the memory store stamps it
-          // at insert. Matching that is the point; the interface has no `now`
-          // parameter to thread through here.
+          // No database default, and the memory store stamps it at insert;
+          // matching that is the point.
           startedAt: new Date(),
         },
       });
@@ -421,12 +342,8 @@ export class PrismaRunStore implements RunStore {
     }
   }
 
-  /**
-   * `Approval.stepExecutionId` is `@unique`: a step execution may be decided
-   * once. A second decision must fail, not overwrite — a silently replaced
-   * approval decision is a governance failure, not a data-layer detail — and it
-   * must fail with the same ConflictError the memory store raises.
-   */
+  /** `Approval.stepExecutionId` is `@unique`: a gate is decided once. A second decision
+   *  must fail with ConflictError, not overwrite — a replaced decision is a governance failure. */
   async createApproval(
     stepExecutionId: string,
     decision: "APPROVED" | "REJECTED",
@@ -464,12 +381,8 @@ export class PrismaRunStore implements RunStore {
     return toAuditEvent(row);
   }
 
-  /**
-   * `createdAt` is millisecond-precision and several events are appended in a
-   * tight sequence, so `id` breaks the tie. Without it the audit trail — the
-   * artefact the whole platform exists to produce — could present two events
-   * from the same millisecond in either order between reads.
-   */
+  /** `createdAt` is millisecond-precision and events append in tight sequence, so `id`
+   *  breaks the tie — otherwise the audit trail could reorder between reads. */
   async listAudit(runId: string): Promise<AuditEventRecord[]> {
     const rows = await prisma.auditEvent.findMany({
       where: { runId },
@@ -509,14 +422,8 @@ export class PrismaRunStore implements RunStore {
     return rows.map(toLlmCall);
   }
 
-  /**
-   * Insert-if-absent, enforced by the `@unique` on `idempotencyKey`.
-   *
-   * The insert is attempted first and the conflict is caught. Reading first and
-   * then creating would leave a window in which two workers both see no row and
-   * both write one — the exact double-write this ledger exists to prevent, and
-   * a window a unique index closes and a `findUnique` does not.
-   */
+  /** Insert-if-absent via the `@unique` on `idempotencyKey`: insert first, catch the conflict.
+   *  Read-then-create leaves a window where two workers both write — the double-write itself. */
   async insertExternalAction(
     input: InsertExternalActionInput,
   ): Promise<InsertExternalActionResult> {
@@ -538,10 +445,8 @@ export class PrismaRunStore implements RunStore {
         where: { idempotencyKey: input.idempotencyKey },
       });
 
-      // The P2002 was on some other unique index, or the row has since been
-      // deleted. Either way there is no prior action to report, and returning
-      // `created: false` with a fabricated record would tell the caller its
-      // write was safely deduplicated when it was not. Surface the real cause.
+      // P2002 on another index, or the row was deleted. Reporting `created: false` would
+      // claim the write was deduplicated when it was not, so surface the real cause.
       if (!existing) throw error;
 
       return { created: false, record: toExternalAction(existing) };

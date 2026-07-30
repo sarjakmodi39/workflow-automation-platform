@@ -6,33 +6,18 @@ import { MockLlmProvider } from "@/lib/llm/mock";
 import { OpenRouterProvider } from "@/lib/llm/openrouter";
 import type { LlmProvider } from "@/lib/llm/types";
 
-/**
- * Composition root for the engine.
- *
- * Reading the ambient clock and the ambient random source is *correct here* and
- * nowhere else: the runner and both stores take their clock and their token
- * source from this object precisely so they never reach for a global, and this
- * file is the one place whose job is to hand them the real ones.
- */
+/* Composition root. Reading the ambient clock and random source is correct here and nowhere
+ * else — the runner and stores take both from this object so they never reach for a global. */
 
 /** Used when MAX_LLM_CALLS_PER_RUN is absent, non-numeric, or non-positive. */
 const DEFAULT_MAX_LLM_CALLS = 20;
 
-/**
- * Wall-clock budget for one `advanceRun` tick. Vercel's serverless functions
- * are capped at 60s, so a tick stops driving new steps at 40s and persists its
- * cursor: the remaining 20s is headroom for the step already in flight to
- * finish and for the final status write to land. A run that needs longer is
- * resumed by the next tick from the persisted cursor, so the budget bounds a
- * single invocation, not the run.
- */
+/** Budget for one tick. Vercel caps a function at 60s, so driving stops at 40s and the
+ *  cursor persists; the rest is headroom. Bounds one invocation, not the run. */
 const BUDGET_MS = 40_000;
 
-/**
- * Lock lease, deliberately longer than BUDGET_MS. A lease shorter than the
- * budget would expire while its holder was still working and let a second
- * worker into the same run.
- */
+/** Lock lease, deliberately longer than BUDGET_MS: a shorter lease would expire while
+ *  its holder was still working and admit a second worker to the same run. */
 const LOCK_MS = 60_000;
 
 /** Total attempts for an auto-retryable step, including the first. */
@@ -47,18 +32,8 @@ function parseMaxLlmCalls(raw: string | undefined): number {
   return parsed;
 }
 
-/**
- * Offline provider. Its recorded `provider` name is "mock", so every call it
- * serves is identifiable as such in the LlmCall ledger and the audit trail —
- * a mock answer is never presentable as a real one.
- *
- * The default value is shaped to satisfy both AI step types in the demo
- * workflow at once: `ai_extraction` picks out only the fields its config
- * declares and ignores the rest, and `ai_classification` reads `label`,
- * `confidence` and `rationale`. That coupling to the seeded workflow is the
- * weakness of a fixed default, and it is why this is a demo aid rather than a
- * general offline mode — see the Task 13 note below.
- */
+/** Offline provider, recorded as "mock" so its answers are never presentable as real ones.
+ *  The default shape satisfies both AI step types at once — a demo aid, not an offline mode. */
 function offlineProvider(): LlmProvider {
   return new MockLlmProvider("mock").setDefault({
     amount: 0,
@@ -70,17 +45,8 @@ function offlineProvider(): LlmProvider {
   });
 }
 
-/**
- * The configured real providers, ordered so `preferred` comes first.
- *
- * `callLlm` tries the chain in order and the first success wins, so this
- * ordering *is* the fallback policy. A provider is only included when its key
- * is present: an unkeyed provider would fail every call with "not set", which
- * would spend a chain position and an `LlmCall` ERROR row to learn nothing.
- *
- * Returns `[]` when neither key is set, which is what makes the offline mock
- * fallback in `buildProviders` reachable.
- */
+/** Real providers with `preferred` first — the chain order *is* the fallback policy. Keyless
+ *  providers are omitted rather than spending a chain position on a certain failure. */
 function realProviders(preferred: string): LlmProvider[] {
   const chain: LlmProvider[] = [];
   if ((process.env.GEMINI_API_KEY ?? "").trim() !== "") {
@@ -89,9 +55,8 @@ function realProviders(preferred: string): LlmProvider[] {
   if ((process.env.OPENROUTER_API_KEY ?? "").trim() !== "") {
     chain.push(new OpenRouterProvider());
   }
-  // A `preferred` naming neither provider leaves the default order untouched
-  // rather than emptying the chain — a typo in LLM_PROVIDER must not silently
-  // demote a working setup to the mock.
+  // A `preferred` naming neither provider leaves the order untouched rather than emptying
+  // the chain: a typo in LLM_PROVIDER must not silently demote a working setup to the mock.
   return [
     ...chain.filter((p) => p.name === preferred),
     ...chain.filter((p) => p.name !== preferred),
@@ -100,15 +65,8 @@ function realProviders(preferred: string): LlmProvider[] {
 
 let warnedAboutFallback = false;
 
-/**
- * The provider chain, in the order `callLlm` will try them.
- *
- * `LLM_PROVIDER=mock` asks for the offline provider explicitly. Otherwise the
- * real chain is used, and the mock stands in only when no real provider is
- * configured at all — otherwise a missing API key would make every AI step fail
- * and leave the demo undemonstrable. The substitution is warned about once and
- * is visible afterwards in every LlmCall row it produces.
- */
+/** The provider chain in try order. `LLM_PROVIDER=mock` asks for offline explicitly; otherwise
+ *  the mock stands in only when no key is set at all, warned once and visible in every row. */
 function buildProviders(): LlmProvider[] {
   const configured = (process.env.LLM_PROVIDER ?? "gemini").trim().toLowerCase();
   if (configured === "mock") return [offlineProvider()];

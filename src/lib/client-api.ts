@@ -7,20 +7,8 @@ import type {
   WorkflowDefinition,
 } from "@/lib/types";
 
-/*
- * The browser's half of the API contract.
- *
- * Every response type here was read off the route handler that produces it, not
- * off the Prisma model: `GET /api/workflows` selects only `{ id, version,
- * createdAt }` for each version, so the list page cannot show step counts, and
- * `GET /api/runs` selects only `workflow.name`, so a run row cannot link to its
- * workflow. Typing what the route actually returns is what makes those limits
- * visible at compile time instead of at runtime as `undefined`.
- *
- * `import type` is erased, so importing `ErrorBody` from `@/lib/api` does not
- * pull `next/server` into the client bundle — and it keeps one definition of
- * the error shape rather than a copy that can drift from the routes.
- */
+/* Types read off each route handler, not the Prisma model, so what a route omits is a compile
+ * error rather than runtime `undefined`. `import type` keeps `next/server` out of the bundle. */
 
 /* -------------------------------------------------------------------------- */
 /* Results                                                                    */
@@ -58,9 +46,8 @@ async function request<T>(url: string, init?: RequestInit): Promise<ApiResult<T>
   try {
     response = await fetch(url, init);
   } catch {
-    // A thrown fetch is a transport fault, not a server answer: there is no
-    // status and no error body, so one is synthesised rather than letting the
-    // caller render "TypeError: Failed to fetch".
+    // A thrown fetch is a transport fault, not a server answer: no status and no body,
+    // so one is synthesised rather than rendering "TypeError: Failed to fetch".
     return {
       ok: false,
       failure: {
@@ -75,9 +62,8 @@ async function request<T>(url: string, init?: RequestInit): Promise<ApiResult<T>
     };
   }
 
-  // Read as text first. A framework-level 500 (a module that threw before the
-  // handler ran) returns an HTML error page, and `response.json()` would throw
-  // on it — turning a failure this UI is meant to display into a crash.
+  // Text first: a framework-level 500 returns an HTML page, and `response.json()` would
+  // throw on it — turning a failure this UI exists to display into a crash.
   const text = await response.text();
   let body: unknown;
   if (text.length > 0) {
@@ -160,13 +146,8 @@ export interface WorkflowListResponse {
   workflows: WorkflowSummary[];
 }
 
-/**
- * `GET /api/workflows/[id]` — full version rows. `definition` and
- * `grantedPermissions` are `Json` columns, so they arrive as `unknown`: nothing
- * between the database and here has checked their shape, and typing them as
- * `WorkflowDefinition` would be a claim this code cannot make. Normalise with
- * `toStepList` / `toStringArray` before rendering.
- */
+/** `GET /api/workflows/[id]`. `definition` and `grantedPermissions` are `Json` columns, so
+ *  they arrive `unknown` — nothing checked them. Normalise before rendering. */
 export interface VersionDetail {
   id: string;
   workflowId: string;
@@ -215,11 +196,8 @@ export interface CreateRunResponse {
 /* Run detail                                                                 */
 /* -------------------------------------------------------------------------- */
 
-/**
- * `publicRun()` strips `lockToken` and `lockedUntil` from every run the API
- * returns, so they are deliberately absent here. The lock is an internal
- * concurrency mechanism; a browser that could read the token could steal it.
- */
+/** `publicRun()` strips `lockToken` and `lockedUntil`, so they are absent here by design:
+ *  the lock is internal, and a browser that could read the token could steal it. */
 export interface RunDetail {
   id: string;
   workflowVersionId: string;
@@ -257,11 +235,8 @@ export interface StepExecutionRow {
   approval: ApprovalRow | null;
 }
 
-/**
- * `type` is a database enum, but it is typed as `string` here on purpose: the
- * UI looks it up in a label table with a fallback, so an event type added to the
- * schema before the UI knows about it still renders instead of vanishing.
- */
+/** `type` is a database enum but typed `string` on purpose: the UI looks it up with a
+ *  fallback, so an event added to the schema still renders instead of vanishing. */
 export interface AuditRow {
   id: string;
   stepExecutionId: string | null;

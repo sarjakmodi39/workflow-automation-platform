@@ -7,16 +7,8 @@ import type { WorkflowDefinition } from "@/lib/types";
 /* Error to status                                                            */
 /* -------------------------------------------------------------------------- */
 
-/**
- * `AppError.code` to HTTP status. Centralised here so eleven route handlers
- * cannot drift, and keyed on the exact code strings authored in
- * `src/lib/errors.ts` — a key that does not match a real code would silently
- * downgrade that error to the 500 fallback.
- *
- * The fallback is 500 rather than 400 on purpose: a code this table does not
- * know about is a code nobody has decided a status for, and guessing a 4xx
- * would tell the client its request was at fault on no evidence.
- */
+/** Code to HTTP status, centralised so eleven routes cannot drift; a key not matching a real
+ *  code silently falls back to 500 — 500 not 400, since guessing 4xx blames the client. */
 const STATUS_BY_CODE: Record<string, number> = {
   VALIDATION_ERROR: 400,
   NOT_FOUND: 404,
@@ -51,16 +43,8 @@ export function ok<T>(data: T, status = 200) {
   return NextResponse.json(data, { status });
 }
 
-/**
- * The only error path in the API.
- *
- * An `AppError` is something this codebase authored deliberately: its code,
- * message and details are meant to be read by a client, so they are returned
- * as-is. Anything else is an unexpected throw whose message may carry a
- * connection string, an API key, a file path or a SQL fragment, so it is logged
- * server-side and replaced with a generic 500. That asymmetry is the whole
- * reason the taxonomy exists.
- */
+/** The only error path in the API. An `AppError` was authored deliberately and is returned
+ *  as-is; anything else may carry a key or connection string, so it is logged and genericised. */
 export function fail(error: unknown): NextResponse<ErrorBody> {
   if (isAppError(error)) {
     return NextResponse.json(
@@ -95,13 +79,8 @@ export function fail(error: unknown): NextResponse<ErrorBody> {
 /* Request bodies                                                            */
 /* -------------------------------------------------------------------------- */
 
-/**
- * Parses and validates a JSON request body, or throws `ValidationError`.
- *
- * Both failure modes are the client's fault and must be 400s: unparseable JSON
- * throws a `SyntaxError` out of `request.json()`, which would otherwise reach
- * `fail` as an unrecognised error and become a 500.
- */
+/** Parses and validates a JSON body, or throws `ValidationError`. Both failure modes are the
+ *  client's fault: an unparseable body throws SyntaxError, which would otherwise be a 500. */
 export async function parseJsonBody<T>(
   request: Request,
   schema: z.ZodType<T>,

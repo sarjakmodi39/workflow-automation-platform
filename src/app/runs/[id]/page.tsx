@@ -1,12 +1,8 @@
 import Link from "next/link";
 import { RunView } from "@/app/runs/[id]/RunView";
 
-/**
- * A Server Component shell. Nothing is fetched here, so this page does not need
- * a database at build time — `RunView` fetches from the API in the browser,
- * which is also what makes its loading and failure states real rather than
- * hypothetical.
- */
+/** A Server Component shell fetching nothing, so no database is needed at build time;
+ *  `RunView` fetches in the browser, which makes its loading and failure states real. */
 export const dynamic = "force-dynamic";
 
 export default async function RunPage({

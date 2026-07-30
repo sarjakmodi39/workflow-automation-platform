@@ -1,11 +1,7 @@
 import type { ReactNode } from "react";
 
-/**
- * A deliberate empty state: what is missing, and what to do about it.
- *
- * An empty list rendered as nothing at all is indistinguishable from a bug, so
- * every list in this app renders this instead.
- */
+/** A deliberate empty state: what is missing and what to do. An empty list rendered as
+ *  nothing is indistinguishable from a bug, so every list here renders this instead. */
 export function EmptyState({
   title,
   children,

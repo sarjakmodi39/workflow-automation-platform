@@ -80,8 +80,7 @@ export class MemoryRunStore implements RunStore {
     return { ...run };
   }
 
-  // `now` comes from the caller, never from Date.now(): the runner takes its
-  // clock from RunnerDeps, and a store that judged expiry on the ambient clock
+  // `now` comes from the caller, never Date.now(): judging expiry on the ambient clock
   // would treat every lock written on an injected timeline as already stale.
   async acquireLock(
     runId: string,
@@ -101,9 +100,8 @@ export class MemoryRunStore implements RunStore {
     return true;
   }
 
-  // Deliberately asymmetric with acquireLock: release is idempotent, so a
-  // missing run (or a token mismatch) is a silent no-op rather than a
-  // NotFoundError. Task 12's Prisma implementation must reproduce this.
+  // Asymmetric with acquireLock by design: release is idempotent, so a missing run or
+  // token mismatch is a silent no-op. The Prisma store reproduces this.
   async releaseLock(runId: string, token: string): Promise<void> {
     const run = this.runs.get(runId);
     if (!run) return;
@@ -112,19 +110,14 @@ export class MemoryRunStore implements RunStore {
     run.lockedUntil = null;
   }
 
-  // Insertion order into `this.steps` is creation order, which is exactly the
-  // ordering the interface requires — the runner's skip rule reads the last row
-  // per stepId. Task 12 has to reproduce it with an explicit, tiebroken orderBy.
+  // Insertion order is creation order, which is what the interface requires; the Prisma
+  // store reproduces it with an explicit, tiebroken orderBy.
   async listStepExecutions(runId: string): Promise<StepExecutionRecord[]> {
     return this.steps.filter((s) => s.runId === runId).map((s) => ({ ...s }));
   }
 
-  /**
-   * Mirrors `@@unique([runId, stepId, attempt])` in prisma/schema.prisma. The
-   * in-memory store is what every engine test runs against, so a permissive
-   * insert here would let an attempt-numbering bug pass the whole suite and
-   * then fail with P2002 in production. Fail here exactly where Postgres does.
-   */
+  /** Mirrors `@@unique([runId, stepId, attempt])`. Every engine test runs against this store,
+   *  so a permissive insert would pass the suite and fail with P2002 in production. */
   async createStepExecution(
     input: CreateStepExecutionInput,
   ): Promise<StepExecutionRecord> {
@@ -173,12 +166,8 @@ export class MemoryRunStore implements RunStore {
     return { ...record };
   }
 
-  /**
-   * Mirrors the `@unique` constraint on `Approval.stepExecutionId` in
-   * prisma/schema.prisma. A step execution may be decided once; a second
-   * call must fail loudly here exactly as it will fail with P2002 against
-   * Postgres, rather than silently overwriting the first decision.
-   */
+  /** Mirrors the `@unique` on `Approval.stepExecutionId`: a gate is decided once, and a
+   *  second call fails loudly here exactly as P2002 would, rather than overwriting. */
   async createApproval(
     stepExecutionId: string,
     decision: "APPROVED" | "REJECTED",

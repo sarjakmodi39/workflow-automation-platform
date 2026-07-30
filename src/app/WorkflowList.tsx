@@ -9,11 +9,25 @@ import { getJson, type WorkflowListResponse } from "@/lib/client-api";
 import { formatTimestamp, pluralise } from "@/lib/format";
 import { useApiResource } from "@/lib/useApiResource";
 
-/**
- * Client-side because the three states below — in flight, empty, failed — are
- * only distinguishable to a reader if the fetch happens where they can see it.
- * The page itself stays a Server Component.
- */
+/** What each seeded workflow is for, so a reviewer opening this page cold knows which one
+ *  to run first instead of picking at random. Keyed by the seed's fixed ids. */
+const WORKFLOW_HINTS: Record<string, { badge: string; hint: string }> = {
+  seed_vendor_review: {
+    badge: "Start here",
+    hint: "Runs to completion with no human input — the quickest way to see the engine work.",
+  },
+  seed_invoice_approval: {
+    badge: "Approval gate",
+    hint: "Stops for a human. Two versions with different thresholds, so the same input can decide differently.",
+  },
+  seed_permission_demo: {
+    badge: "Fails by design",
+    hint: "Under-granted on purpose: it stops at the external write with PERMISSION_DENIED.",
+  },
+};
+
+/** Client-side because the three states below — in flight, empty, failed — are only
+ *  distinguishable if the fetch happens where the reader can see it. */
 export function WorkflowList() {
   const { resource, reload } = useApiResource<WorkflowListResponse>(
     () => getJson<WorkflowListResponse>("/api/workflows"),
@@ -44,18 +58,37 @@ export function WorkflowList() {
         <ul className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
           {resource.data.workflows.map((workflow) => {
             const latest = workflow.versions[0];
+            const guide = WORKFLOW_HINTS[workflow.id];
             return (
               <li
                 key={workflow.id}
                 className="flex items-center justify-between gap-4 p-4"
               >
                 <div className="min-w-0">
-                  <Link
-                    href={`/workflows/${workflow.id}`}
-                    className="font-medium text-blue-700 underline-offset-2 hover:underline"
-                  >
-                    {workflow.name}
-                  </Link>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Link
+                      href={`/workflows/${workflow.id}`}
+                      className="font-medium text-blue-700 underline-offset-2 hover:underline"
+                    >
+                      {workflow.name}
+                    </Link>
+                    {guide ? (
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                          guide.badge === "Start here"
+                            ? "bg-emerald-100 text-emerald-900"
+                            : guide.badge === "Fails by design"
+                              ? "bg-rose-100 text-rose-900"
+                              : "bg-amber-100 text-amber-900"
+                        }`}
+                      >
+                        {guide.badge}
+                      </span>
+                    ) : null}
+                  </div>
+                  {guide ? (
+                    <p className="mt-1 max-w-prose text-sm text-slate-600">{guide.hint}</p>
+                  ) : null}
                   <p className="mt-0.5 text-xs text-slate-500">
                     {pluralise(workflow.versions.length, "version")}
                     {latest ? ` · latest v${latest.version}` : " · no versions"} ·

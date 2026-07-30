@@ -1,17 +1,8 @@
 import { JsonBlock } from "@/components/JsonBlock";
 import type { ApiFailure } from "@/lib/client-api";
 
-/*
- * Every failure in this UI is rendered here, from the one error body the API
- * returns (`{ error: { code, message, retryable, details } }`).
- *
- * The status decides two things a bare message cannot: what the reader should
- * do, and whether anything is actually wrong. A 409 means the request was
- * well-formed and the server is healthy — the run simply moved on, and the
- * answer is to reload and look again. A 500 means the server broke and no
- * amount of reloading helps. Rendering both as red "Error" text would tell the
- * reader nothing, so they get different tones and different instructions.
- */
+/* Every failure renders here from the one API error body. Status decides what a bare message
+ * cannot — whether anything is wrong, and what to do — so 409 and 500 read differently. */
 
 interface Guidance {
   heading: string;
@@ -106,11 +97,8 @@ interface DetailIssue {
   message: string;
 }
 
-/**
- * Both `ValidationError` details shapes carry an `issues` array — `{ path,
- * message }` from request-body parsing, `{ stepId, code, message }` from the
- * workflow validator. Either reads better as a list than as raw JSON.
- */
+/** Both `ValidationError` shapes carry an `issues` array — `{ path, message }` from body
+ *  parsing, `{ stepId, code, message }` from the validator. Both read better as a list. */
 function detailIssues(details: unknown): DetailIssue[] | null {
   if (!details || typeof details !== "object") return null;
   const issues = (details as { issues?: unknown }).issues;

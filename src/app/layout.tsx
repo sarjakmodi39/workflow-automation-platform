@@ -11,7 +11,14 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body className="bg-slate-50 text-slate-900 antialiased">{children}</body>
+      {/* Extensions such as Grammarly add attributes to <body> before React hydrates,
+          which reads as a mismatch. Suppressed one level deep only, not app-wide. */}
+      <body
+        className="bg-slate-50 text-slate-900 antialiased"
+        suppressHydrationWarning
+      >
+        {children}
+      </body>
     </html>
   );
 }

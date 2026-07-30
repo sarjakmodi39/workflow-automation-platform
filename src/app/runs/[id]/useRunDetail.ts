@@ -3,27 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getJson, type ApiFailure, type RunDetailResponse } from "@/lib/client-api";
 
-/**
- * Loading state for a view that refetches itself while the reader watches.
- *
- * `useApiResource` is deliberately not used here. It resets to `loading` on
- * every reload, which is right for a page that loads once — and wrong for this
- * one: the run view refetches about once a second while a run advances, and
- * tearing the whole page down to a skeleton between polls would make the run
- * unreadable exactly when there is most to see.
- *
- * So the state is four-valued rather than three, and the extra distinction is
- * the point:
- *
- *   - `data === null, failure === null` — the first request is in flight.
- *   - `data === null, failure !== null` — nothing loaded; the failure is all
- *     there is to show.
- *   - `data !== null, failure !== null` — a *refresh* failed. The run on screen
- *     is the last good response and stays; the failure is a warning beside it,
- *     not a replacement for it. Discarding a run the reader is reading because
- *     one poll timed out would be a regression, not error handling.
- *   - `data !== null, failure === null` — current.
- */
+/** Four-valued loading state, not `useApiResource`, which resets to `loading` every reload:
+ *  this view polls each second, so a failed *refresh* warns beside the run, never replaces it. */
 export interface RunDetailState {
   /** The most recent successful response. Never cleared by a failed refresh. */
   data: RunDetailResponse | null;
@@ -38,16 +19,8 @@ export function useRunDetail(runId: string): RunDetailState {
   const [failure, setFailure] = useState<ApiFailure | null>(null);
   const [refreshing, setRefreshing] = useState(true);
 
-  /*
-   * Latest request wins.
-   *
-   * Two refreshes overlap routinely here — the tick loop fires one while a
-   * manual reload is still open — and responses can arrive in either order. The
-   * counter is incremented when a request starts and checked when it resolves,
-   * so a slow earlier response cannot overwrite a fast later one with staler
-   * run state. It is also incremented on unmount, which discards everything in
-   * flight.
-   */
+  // Latest request wins: refreshes overlap routinely and can resolve out of order, so a
+  // slow earlier response must not overwrite a fast later one. Also bumped on unmount.
   const generation = useRef(0);
 
   const refresh = useCallback(async () => {

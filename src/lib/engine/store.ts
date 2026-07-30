@@ -76,11 +76,8 @@ export interface InsertExternalActionResult {
   record: ExternalActionRecord;
 }
 
-/**
- * Everything the engine needs from persistence. The engine depends on this
- * interface only — never on Prisma — so the entire engine test suite runs
- * against MemoryRunStore with no database.
- */
+/** Everything the engine needs from persistence. It depends on this interface only, never
+ *  on Prisma, so the whole engine suite runs against MemoryRunStore with no database. */
 export interface RunStore {
   getWorkflowVersion(id: string): Promise<WorkflowVersionRecord | null>;
 
@@ -88,15 +85,8 @@ export interface RunStore {
   getRun(runId: string): Promise<RunRecord | null>;
   updateRun(runId: string, patch: UpdateRunInput): Promise<RunRecord>;
 
-  /**
-   * Conditional acquire. Returns false when another worker holds an unexpired
-   * lock. `now` is supplied by the caller so no implementation reads an ambient
-   * clock — otherwise a runner driven by an injected clock writes `lockedUntil`
-   * on one timeline and the store judges expiry on another, and the lock stops
-   * being a lock. Task 12 renders this as a single conditional UPDATE:
-   *   SET lockToken = $token, lockedUntil = $until
-   *   WHERE id = $id AND (lockToken IS NULL OR lockedUntil <= $now)
-   */
+  /** Conditional acquire; false when another worker holds an unexpired lock. `now` comes from
+   *  the caller so no implementation reads an ambient clock and stops being a lock. */
   acquireLock(
     runId: string,
     token: string,
@@ -105,20 +95,8 @@ export interface RunStore {
   ): Promise<boolean>;
   releaseLock(runId: string, token: string): Promise<void>;
 
-  /**
-   * Every attempt for the run, in creation order — oldest first.
-   *
-   * The ordering is load-bearing, not cosmetic: the runner decides whether a
-   * step is already done by taking the *last* row for each stepId, so that a
-   * later SUCCEEDED attempt supersedes an earlier FAILED one. If a stale
-   * FAILED row sorts after the SUCCEEDED one that replaced it, the runner
-   * re-executes a step it has already completed.
-   *
-   * Task 12 must therefore order by creation time *with a deterministic
-   * tiebreak* — `startedAt`, then `attempt`, then `id` — because two attempts
-   * can land on the same timestamp and an unstable sort would make the skip
-   * rule flap between runs.
-   */
+  /** Every attempt in creation order, oldest first. Load-bearing: the runner reads the last
+   *  row per stepId, so an unstable sort re-executes completed steps. Tiebreak required. */
   listStepExecutions(runId: string): Promise<StepExecutionRecord[]>;
   createStepExecution(input: CreateStepExecutionInput): Promise<StepExecutionRecord>;
   updateStepExecution(

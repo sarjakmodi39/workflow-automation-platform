@@ -1,11 +1,5 @@
-/**
- * Pretty-printed JSON for values this application did not author — model
- * output, run input, error details.
- *
- * The value is passed as a text child, so React escapes it. That is the whole
- * safety story for this component: no `dangerouslySetInnerHTML`, no syntax
- * highlighter that would have to parse and re-emit markup.
- */
+/** Pretty-printed JSON for values this app did not author. Passed as a text child so React
+ *  escapes it — no `dangerouslySetInnerHTML`, no highlighter that re-emits markup. */
 export function JsonBlock({ value, label }: { value: unknown; label?: string }) {
   if (value === null || value === undefined) return null;
 

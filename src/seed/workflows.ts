@@ -1,17 +1,7 @@
 import type { WorkflowDefinition } from "@/lib/types";
 
-/*
- * Seed workflows.
- *
- * These live here rather than inline in `prisma/seed.ts` for one reason: this
- * module imports nothing that touches a database, so the test suite can assert
- * that every fixture is valid without needing one. A seed that only fails when
- * you run it against Postgres is a seed nobody checks.
- *
- * Ids are fixed strings rather than generated cuids so the seed can upsert.
- * Running `npm run db:seed` twice must leave the same three workflows behind,
- * not six.
- */
+/* Kept out of `prisma/seed.ts` because this module touches no database, so the test suite
+ * can validate every fixture. Ids are fixed, not cuids, so re-seeding upserts. */
 
 export interface SeedVersion {
   id: string;
@@ -20,11 +10,8 @@ export interface SeedVersion {
   grantedPermissions: string[];
   /** What this version is for, shown when the seed runs. */
   note: string;
-  /**
-   * Set only on the fixture that is deliberately under-granted. Holds the
-   * validation code it is expected to produce, so the test asserts the fixture
-   * is invalid *for the stated reason* rather than merely invalid.
-   */
+  /** Only on the deliberately under-granted fixture: the code it must produce, so tests
+   *  assert it is invalid *for the stated reason* rather than merely invalid. */
   expectInvalid?: string;
 }
 
@@ -36,12 +23,8 @@ export interface SeedWorkflow {
   sampleInput: Record<string, unknown>;
 }
 
-/**
- * The invoice workflow, parameterised by approval threshold so v1 and v2 differ
- * in exactly one meaningful way. A run pins the version it started on, so
- * lowering the threshold in v2 must not change what an in-flight v1 run does —
- * that is the property the two versions exist to make observable.
- */
+/** Parameterised by threshold so v1 and v2 differ in exactly one way. A run pins its
+ *  version, so lowering the threshold must not change an in-flight v1 run. */
 function invoiceDefinition(threshold: number): WorkflowDefinition {
   return {
     steps: [
@@ -67,11 +50,8 @@ function invoiceDefinition(threshold: number): WorkflowDefinition {
         },
       },
       {
-        // Retrieved separately from the policy, and by a *path* rather than a
-        // literal, so the documents the classifier sees actually depend on the
-        // run input. Classifying the generic policy text instead would make the
-        // vendor-risk half of the condition below dead: every run would come
-        // back low_risk regardless of who the invoice was from.
+        // Retrieved by *path*, not literal, so the classifier's documents depend on the run
+        // input; classifying policy text instead returns low_risk for every vendor.
         id: "retrieve_vendor",
         type: "document_retrieval",
         name: "Retrieve vendor profile",
@@ -87,10 +67,8 @@ function invoiceDefinition(threshold: number): WorkflowDefinition {
         },
       },
       {
-        // The control point of the whole design: the model classifies, but a
-        // declarative comparator decides. Nothing the model returns can route
-        // the run past the approval gate on its own — it can only supply one of
-        // two fixed labels to a rule written by a person.
+        // The control point: the model classifies, a declarative comparator decides.
+        // Its output can only supply one of two fixed labels to a human-written rule.
         id: "check_threshold",
         type: "deterministic_condition",
         name: "Does this need a human?",
@@ -168,9 +146,8 @@ export const SEED_WORKFLOWS: SeedWorkflow[] = [
     ],
   },
   {
-    // Deliberately has no approval gate and no external write: it is the
-    // workflow to run first, because it reaches a completed state without
-    // needing anyone to make a decision.
+    // No gate and no external write, so it is the one to run first: it reaches a
+    // completed state without anyone making a decision.
     id: "seed_vendor_review",
     name: "Vendor Onboarding Review",
     sampleInput: {
@@ -230,19 +207,8 @@ export const SEED_WORKFLOWS: SeedWorkflow[] = [
     ],
   },
   {
-    /*
-     * This fixture exists to make a claim observable rather than asserted.
-     *
-     * Permissions are checked twice: once by the validator before a version is
-     * saved, and again by the runner immediately before a step executes. The
-     * API can only ever demonstrate the first, because it refuses to persist a
-     * version that fails validation. Writing this one straight to the database
-     * is the only way to reach the second check, which is the one that would
-     * matter if a version were ever created by any route other than the API.
-     *
-     * It is expected to fail at `post_payment` with PERMISSION_DENIED, and to
-     * leave a PERMISSION_DENIED audit event behind.
-     */
+    /* Permissions are checked twice — validator before save, runner before execute — and the
+     * API can only show the first. Seeding this directly is the only way to reach the second. */
     id: "seed_permission_demo",
     name: "Permission Enforcement Demo (fails by design)",
     sampleInput: { invoiceId: "INV-2026-0900", amount: 250 },

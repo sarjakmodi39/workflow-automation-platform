@@ -3,14 +3,8 @@ import { describe, expect, it } from "vitest";
 import { ApprovalPanel, pressReject } from "@/app/runs/[id]/ApprovalPanel";
 import type { StepExecutionRow } from "@/lib/client-api";
 
-/*
- * The approval gate is the platform's control point, so what it puts on screen
- * before a person decides is a correctness property, not styling.
- *
- * These assert the three things that make the gate real rather than ceremonial:
- * the reviewer can see what they are approving, they can record why, and the
- * irreversible option is not one click away.
- */
+/* What the gate shows before a person decides is a correctness property, not styling: the
+ * reviewer sees what they approve, records why, and cannot reject in one click. */
 
 function visibleText(element: React.ReactElement): string {
   return renderToStaticMarkup(element)
@@ -42,16 +36,8 @@ function gate(overrides: Partial<StepExecutionRow> = {}): StepExecutionRow {
   };
 }
 
-/*
- * The rule itself, separately from the markup.
- *
- * An earlier version of this file tried to cover "rejecting takes two presses"
- * by asserting on rendered text, and a mutation that wired the first Reject
- * button straight to submit passed it — the text is identical either way. The
- * rule now lives in `pressReject`, where it can be asserted directly. What still
- * is not covered is the wiring from button to rule, which needs click
- * simulation and therefore a DOM dependency this project does not carry.
- */
+/* The rule itself, apart from the markup: asserting on rendered text passed a mutation that
+ * wired Reject straight to submit. Still uncovered is the button-to-rule wiring. */
 describe("pressReject", () => {
   it("asks for confirmation on the first press", () => {
     expect(pressReject("deciding")).toBe("confirm");

@@ -3,19 +3,8 @@ import { describe, expect, it } from "vitest";
 import { ApiErrorNotice } from "@/components/ApiErrorNotice";
 import type { ApiFailure } from "@/lib/client-api";
 
-/*
- * Every failure in this UI is rendered by this one component, and the property
- * being tested is that it does not render them all the same way.
- *
- * A 409 and a 500 arrive through identical code paths and differ only in a
- * number, but they call for opposite responses from the reader: a 409 means the
- * server is healthy and the run simply moved on, a 500 means something broke.
- * Rendering both as red "Error" text would satisfy a typechecker and tell the
- * reader nothing, so the distinction is asserted rather than assumed.
- *
- * `renderToStaticMarkup` needs no DOM and no test renderer — `react-dom/server`
- * is already a dependency of the framework.
- */
+/* One component renders every failure, so the property under test is that it does *not*
+ * render them alike: a 409 means healthy, a 500 means broken. No DOM needed to assert it. */
 
 /** The visible text, with entities decoded and whitespace collapsed. */
 function visibleText(element: React.ReactElement): string {

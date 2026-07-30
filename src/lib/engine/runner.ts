@@ -28,28 +28,12 @@ export interface RunnerDeps {
 
 const TERMINAL: RunRecord["status"][] = ["COMPLETED", "FAILED", "CANCELLED"];
 
-/**
- * Statuses a run can be resumed from. FAILED covers a run whose cause has been
- * addressed; RUNNING covers a tick that ran out of wall-clock budget; PENDING
- * covers a run that was created but never advanced.
- */
+/** Resumable: FAILED (cause addressed), RUNNING (tick ran out of budget),
+ *  PENDING (created but never advanced). */
 const RESUMABLE: RunRecord["status"][] = ["PENDING", "RUNNING", "FAILED"];
 
-/**
- * Highest-numbered attempt per step id.
- *
- * Deliberately keyed on `attempt` rather than on position in the list. Taking
- * the last row would make the skip-succeeded-steps rule depend on
- * `listStepExecutions` ordering, and that ordering is by `startedAt`, which is
- * stamped from whichever application instance created the row. Two instances
- * with skewed clocks can therefore emit a later attempt with an earlier
- * timestamp — and then a stale FAILED row wins, the rule stops recognising the
- * step as done, and it re-executes. For `mock_external_action` that means only
- * the idempotency ledger stands between a resume and a duplicate write.
- *
- * `attempt` is monotonic per step and unique per `(runId, stepId)` by schema
- * constraint, so this needs no clock at all.
- */
+/** Highest attempt per step id. Keyed on `attempt`, never list order: ordering is
+ *  by `startedAt`, so clock skew could let a stale FAILED row win and re-execute. */
 function latestByStep(
   steps: StepExecutionRecord[],
 ): Map<string, StepExecutionRecord> {
@@ -104,12 +88,8 @@ async function loadVersion(
   return version;
 }
 
-/**
- * Takes the run lock for one critical section, returning the token, or null
- * when another worker already holds it. Both the lease and the expiry
- * comparison are derived from deps.now(), so a caller running on an injected
- * clock gets a lock that is judged on that same timeline.
- */
+/** Takes the run lock, returning the token or null if another worker holds it.
+ *  Lease and expiry both derive from deps.now(), so an injected clock is honoured. */
 async function acquireRunLock(
   deps: RunnerDeps,
   runId: string,
@@ -121,16 +101,8 @@ async function acquireRunLock(
   return acquired ? token : null;
 }
 
-/**
- * The decision recorded against an approval gate, or null if it is undecided.
- *
- * The Approval row is consulted first because it is written before the step
- * execution is updated, making it the more durable record. Step *status* is
- * never consulted: decideApproval records a rejected gate as SUCCEEDED exactly
- * like an approved one, since producing a decision is not a failure. Reading
- * "approved" out of SUCCEEDED is precisely the mistake that would let a
- * rejection be stepped over.
- */
+/** The decision on a gate, or null if undecided. Reads the Approval row (written first),
+ *  never step status: a rejected gate is SUCCEEDED too, so status would step over a "no". */
 async function recordedDecision(
   deps: RunnerDeps,
   execution: StepExecutionRecord,
@@ -144,16 +116,8 @@ async function recordedDecision(
   return null;
 }
 
-/**
- * The first approval gate in this run that a human rejected, if any.
- *
- * Scanning the whole run rather than just the step under the cursor is
- * deliberate. A rejection is permanent and cursor-independent: once someone
- * has said no, nothing may drive the run further, however the cursor was set
- * and whichever entry point asked. That is the single property this platform
- * exists to guarantee, so it is enforced as a run-wide invariant instead of a
- * property of one code path.
- */
+/** The first gate a human rejected, if any. Scans the whole run, not just the cursor:
+ *  a rejection is permanent and cursor-independent, so it is a run-wide invariant. */
 async function findRejectedGate(
   deps: RunnerDeps,
   executions: StepExecutionRecord[],
@@ -165,13 +129,8 @@ async function findRejectedGate(
   return null;
 }
 
-/**
- * Terminal stop for a rejected gate, shared by the decision path and the
- * replay path so a rejection lands the run in exactly one state either way.
- * The cursor is left on the gate: it records where the run stopped, and it
- * means any future pass arrives back at the rejection rather than upstream of
- * it.
- */
+/** Terminal stop for a rejected gate, shared by the decision and replay paths.
+ *  Cursor stays on the gate so any future pass arrives back at the rejection. */
 async function stopForRejection(
   deps: RunnerDeps,
   runId: string,
@@ -206,10 +165,8 @@ export async function startRun(
   return run;
 }
 
-/**
- * Executes one step and persists the outcome.
- * Returns the next cursor, or null when the run should complete.
- */
+/** Executes one step and persists the outcome. Returns the next cursor,
+ *  or null when the run should complete. */
 async function executeStep(
   deps: RunnerDeps,
   run: RunRecord,
@@ -327,12 +284,8 @@ async function executeStep(
   }
 }
 
-/**
- * Parks the run at an approval gate.
- *
- * Reuses an existing undecided gate rather than opening a second one, so a
- * repeated tick cannot leave two decidable records for one logical approval.
- */
+/** Parks the run at an approval gate, reusing an existing undecided one so a repeated
+ *  tick cannot leave two decidable records for one logical approval. */
 async function park(
   deps: RunnerDeps,
   runId: string,
@@ -363,16 +316,8 @@ async function park(
   });
 }
 
-/**
- * Drives the run forward until it hits an approval gate, a terminal state, a
- * step failure, or the wall-clock budget. Every transition is persisted before
- * the next is attempted, so the run is always resumable from storage alone.
- *
- * Assumes the run lock is already held. advanceRun and retryStep are the two
- * entry points that take it; keeping the acquire out here is what lets
- * retryStep run its attempt and the tick that follows inside one critical
- * section instead of releasing and racing to re-acquire.
- */
+/** Drives the run until a gate, terminal state, failure, or the wall-clock budget;
+ *  every transition is persisted first. Assumes the run lock is already held. */
 async function drive(deps: RunnerDeps, runId: string): Promise<RunRecord> {
   let run = await requireRun(deps, runId);
   if (TERMINAL.includes(run.status) || run.status === "AWAITING_APPROVAL") {
@@ -414,9 +359,8 @@ async function drive(deps: RunnerDeps, runId: string): Promise<RunRecord> {
     if (step.type === "human_approval") {
       const decision = previous ? await recordedDecision(deps, previous) : null;
 
-      // Second line of defence behind the run-wide scan above. Redundant by
-      // design: the cost of one extra read is nothing next to the cost of
-      // walking past a human "no".
+      // Second line of defence behind the run-wide scan. Redundant by design:
+      // one extra read costs nothing next to walking past a human "no".
       if (decision === "REJECTED") {
         return await stopForRejection(deps, runId, step.id);
       }
@@ -441,11 +385,8 @@ async function drive(deps: RunnerDeps, runId: string): Promise<RunRecord> {
       continue;
     }
 
-    // Continue this step's attempt numbering rather than restarting at 1. A
-    // step that failed and is being re-driven by resumeRun already has an
-    // attempt 1 on record, and (runId, stepId, attempt) is unique in the
-    // schema — restarting the count makes the resume path a constraint
-    // violation, not merely a mislabelled row.
+    // Continue attempt numbering rather than restarting at 1: (runId, stepId, attempt)
+    // is unique, so restarting makes the resume path a constraint violation.
     const { nextCursor, failed } = await executeStep(
       deps,
       run,
@@ -493,16 +434,8 @@ export async function advanceRun(
   }
 }
 
-/**
- * Releases the run lock without letting a persistence fault replace the error
- * the caller is already carrying.
- *
- * `releaseLock` is awaited in a `finally`, so a throw there would discard the
- * exception from `drive` — turning, say, a `ConflictError` that belongs to the
- * client as a 409 into an opaque 500. The lease is the real backstop: an
- * unreleased lock expires at `lockedUntil` on its own, so failing to release is
- * a delay, not a loss of correctness.
- */
+/** Releases the lock without letting a fault in `finally` discard the caller's error
+ *  (a 409 becoming an opaque 500). An unreleased lock expires on its own anyway. */
 async function releaseQuietly(
   deps: RunnerDeps,
   runId: string,
@@ -556,10 +489,8 @@ export async function decideApproval(
     payload: { stepId: execution.stepId, decision, reason },
   });
 
-  // A rejection is a decision, not a fault: the approval step itself succeeded
-  // in producing an answer, and the run stops as CANCELLED rather than FAILED.
-  // CANCELLED is terminal and resumeRun refuses it, and the replay path checks
-  // the recorded decision as well, so the stop holds from either direction.
+  // A rejection is a decision, not a fault: the step succeeded in producing an answer,
+  // so the run stops CANCELLED (terminal, refused by resumeRun) rather than FAILED.
   if (decision === "REJECTED") {
     return stopForRejection(deps, runId, execution.stepId);
   }
@@ -588,21 +519,8 @@ export async function cancelRun(
   return deps.store.updateRun(runId, { status: "CANCELLED" });
 }
 
-/**
- * Resumes a run that stopped without finishing.
- *
- * Permitted from FAILED (once the cause has been addressed), RUNNING (a tick
- * that ran out of wall-clock budget) and PENDING (created but never advanced).
- * Everything else is refused with ConflictError rather than silently doing
- * nothing, because a resume that did not happen must not be reported — or
- * audited — as one:
- *
- *   - CANCELLED is terminal by design. A run stopped by a rejected approval is
- *     CANCELLED, and nothing in the status distinguishes it from an operator
- *     cancellation, so the whole status is closed to revival.
- *   - AWAITING_APPROVAL needs a decision, not a resume.
- *   - COMPLETED has no work left.
- */
+/** Resumes a stopped run (FAILED, RUNNING, PENDING). Everything else is refused loudly:
+ *  CANCELLED covers rejected approvals, AWAITING_APPROVAL needs a decision, COMPLETED is done. */
 export async function resumeRun(
   deps: RunnerDeps,
   runId: string,
@@ -630,14 +548,8 @@ export async function resumeRun(
   return advanceRun(deps, runId);
 }
 
-/**
- * Manual retry of a single failed step. Permitted even for steps that are not
- * auto-retry-safe — the idempotency ledger is what makes that safe.
- *
- * Runs under the run lock, and holds it across the tick that follows: the
- * ledger deduplicates a repeated write, but it is a backstop, not a substitute
- * for keeping two workers out of the same step at the same time.
- */
+/** Manual retry of one failed step, permitted even when not auto-retry-safe because the
+ *  idempotency ledger backs it. Holds the run lock across the tick that follows. */
 export async function retryStep(
   deps: RunnerDeps,
   runId: string,
@@ -645,9 +557,8 @@ export async function retryStep(
 ): Promise<RunRecord> {
   const token = await acquireRunLock(deps, runId);
 
-  // Unlike a background tick, this is an explicit operator command. Returning
-  // an unchanged run would be indistinguishable from a retry that ran and
-  // changed nothing, so a busy run fails loudly instead.
+  // An explicit operator command, unlike a background tick: an unchanged run would look
+  // like a retry that ran and changed nothing, so a busy run fails loudly instead.
   if (token === null) {
     throw new ConflictError(
       `Run ${runId} is locked by another worker; retry once it is free.`,

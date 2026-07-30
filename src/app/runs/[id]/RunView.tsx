@@ -23,28 +23,14 @@ import { REGISTRY } from "@/lib/engine/registry";
 import { formatDuration, formatTimeOfDay, formatTimestamp } from "@/lib/format";
 import type { StepType } from "@/lib/types";
 
-/*
- * The run detail page: what the engine did, why, and what a person can do next.
- *
- * The tick loop lives here. `POST /api/runs/[id]/tick` drives one locked slice
- * of work and returns; the server bounds each slice by wall clock so a long run
- * cannot hold a request open. Continuous progress is therefore the client's job,
- * and this component is what turns a series of bounded ticks into a run that
- * advances while the reader watches.
- */
+/* The run detail page, and home of the tick loop: each POST drives one wall-clock-bounded
+ * slice, so turning bounded ticks into visible progress is the client's job. */
 
 /** One second between ticks: fast enough to feel live, slow enough to read. */
 const TICK_INTERVAL_MS = 1000;
 
-/**
- * A hard ceiling on automatic ticks.
- *
- * The engine bounds each run by its own step budget, so this should never be
- * reached. It exists because the alternative to a ceiling is a browser tab that
- * POSTs once a second forever if a run ever fails to leave RUNNING — a bug in
- * the engine would become a self-inflicted load test. On reaching it the loop
- * stops and says so, and manual advance still works.
- */
+/** Hard ceiling on automatic ticks; unreachable in principle. Without it, a run stuck in
+ *  RUNNING turns every open tab into a self-inflicted load test. Manual advance survives. */
 const MAX_AUTOMATIC_TICKS = 60;
 
 const TERMINAL_STATUSES = ["COMPLETED", "FAILED", "CANCELLED"];
@@ -55,14 +41,8 @@ type Tab = "steps" | "ai" | "audit";
 /* Audit vocabulary                                                           */
 /* -------------------------------------------------------------------------- */
 
-/**
- * Plain-language readings of the audit event types.
- *
- * The trail is the evidence a reviewer reads to decide whether the platform
- * really is controlled, so the events say what happened rather than naming an
- * enum member. Unlisted types fall back to their raw value: an event that the
- * schema has and this table does not must still appear.
- */
+/** Plain-language readings of audit event types, since the trail is the evidence a reviewer
+ *  reads. Unlisted types fall back to their raw value so nothing can vanish. */
 const AUDIT_LABELS: Record<string, string> = {
   RUN_CREATED: "Run created",
   STEP_STARTED: "Step started",
@@ -138,14 +118,8 @@ function Tabs({
   );
 }
 
-/**
- * A step execution row.
- *
- * `stepName` comes from the workflow definition, keyed by `stepId` — the
- * execution row stores only the id, and showing a reader `extract_fields` when
- * the definition calls the step "Extract invoice fields" wastes the name the
- * author already wrote.
- */
+/** A step execution row. `stepName` comes from the definition keyed by `stepId`, since the
+ *  row stores only the id and `extract_fields` wastes the name the author wrote. */
 function StepRow({
   step,
   stepName,
@@ -158,9 +132,8 @@ function StepRow({
   const spec = REGISTRY[step.stepType as StepType];
   const duration = formatDuration(step.startedAt, step.finishedAt);
 
-  // The idempotency ledger refused a second write. This is the single most
-  // interesting thing the platform can report about an external action, so it
-  // is called out rather than left for the reader to spot inside the output.
+  // The ledger refused a second write — the most interesting thing the platform can
+  // report about an external action, so it is called out, not buried in the output.
   const duplicatePrevented =
     !!step.output &&
     typeof step.output === "object" &&
@@ -266,14 +239,8 @@ function StepRow({
   );
 }
 
-/**
- * One AI call, prompt and response included.
- *
- * The prompt and the raw response are what make the AI part of this auditable
- * rather than asserted, so they are shown — collapsed, because they are long,
- * and inside `JsonBlock`/text children, because they are model output and must
- * never be interpreted as markup.
- */
+/** One AI call, prompt and response included — that is what makes the AI auditable rather
+ *  than asserted. Collapsed because long, and escaped because it is model output. */
 function LlmCallRowView({
   call,
   stepLabel,
@@ -376,15 +343,8 @@ export function RunView({ runId }: { runId: string }) {
   const isRunning = status === "RUNNING";
   const tickBudgetSpent = ticks >= MAX_AUTOMATIC_TICKS;
 
-  /*
-   * The tick loop.
-   *
-   * `ticks` is a dependency, and that is what makes this repeat: a successful
-   * tick increments it, the dependency changes, the effect re-runs, and the next
-   * tick is scheduled. Depending only on the run status would fire exactly once
-   * — the status stays RUNNING, so nothing in the dependency list would change
-   * and the run would stall after a single slice with no visible reason.
-   */
+  // The tick loop. `ticks` is a dependency, and that is what makes it repeat: depending
+  // only on run status fires once, since RUNNING never changes, and the run stalls.
   useEffect(() => {
     if (!isRunning || !autoAdvance || tickBudgetSpent) return;
 
@@ -397,10 +357,8 @@ export function RunView({ runId }: { runId: string }) {
         );
 
         if (!result.ok) {
-          // Stop, do not retry. A tick that failed will almost certainly fail
-          // the same way, and a once-a-second POST loop against a server that
-          // is already unhealthy makes things worse. The failure is shown with
-          // a manual advance button beside it, so the reader decides.
+          // Stop, do not retry: it will fail the same way, and hammering an unhealthy
+          // server makes it worse. Shown with a manual advance button, so the reader decides.
           if (!cancelled) {
             setTickFailure(result.failure);
             setAutoAdvance(false);
@@ -408,11 +366,8 @@ export function RunView({ runId }: { runId: string }) {
           return;
         }
 
-        // The tick already happened on the server, so the refresh runs even if
-        // this cycle was cancelled while the request was open — pausing mid-tick
-        // must not leave the page showing state the server has already moved
-        // past. Only the loop-control updates are skipped. `refresh` has its own
-        // unmount guard, so this is safe after the component is gone.
+        // The tick already happened server-side, so refresh even if cancelled mid-flight;
+        // only loop-control updates are skipped. `refresh` has its own unmount guard.
         if (!cancelled) {
           setTickFailure(null);
           setTicks((n) => n + 1);
@@ -445,13 +400,8 @@ export function RunView({ runId }: { runId: string }) {
 
     setConfirmation(`${label} — the run is now ${result.data.run.status}.`);
 
-    // Deciding an approval or resuming creates work to be driven, so automatic
-    // advance is re-armed even if an earlier tick failure had switched it off.
-    //
-    // The tick budget is reset too, and only here. Every caller of `control` is
-    // a button a person pressed, and the budget exists to stop an *unattended*
-    // tab polling forever — not to stop a reviewer who is watching the run. So a
-    // deliberate action buys a fresh 60 ticks; an idle page does not.
+    // Re-arm auto-advance and reset the budget, only here: every caller is a button a
+    // person pressed, and the budget exists to stop *unattended* tabs, not watching ones.
     setAutoAdvance(true);
     setTicks(0);
     setTickFailure(null);
@@ -492,20 +442,16 @@ export function RunView({ runId }: { runId: string }) {
 
   const awaitingApproval = data.steps.find((s) => s.status === "AWAITING_APPROVAL");
 
-  // The last failed step, not the first: after a retry the earlier attempt is
-  // still on the record, and offering to retry the older row would resubmit
-  // work that has since been superseded.
+  // The last failed step, not the first: earlier attempts stay on the record, and
+  // retrying the older row would resubmit work that has since been superseded.
   let failedStep: StepExecutionRow | undefined;
   for (const step of data.steps) if (step.status === "FAILED") failedStep = step;
 
   const rejectedGate = data.steps.find((s) => s.approval?.decision === "REJECTED");
   const isTerminal = TERMINAL_STATUSES.includes(data.run.status);
 
-  // Mirrors the engine's own guards rather than guessing: RESUMABLE is
-  // [PENDING, RUNNING, FAILED], and CANCELLED is refused with a conflict. A
-  // resume button on a cancelled run would invite the reader to try to step over
-  // a rejection — the API would refuse, but offering it at all is the wrong
-  // message.
+  // Mirrors the engine's guards: RESUMABLE is [PENDING, RUNNING, FAILED]. Offering Resume
+  // on a CANCELLED run would invite stepping over a rejection, refusal notwithstanding.
   const canResume = data.run.status === "FAILED" || data.run.status === "PENDING";
   const canCancel = !isTerminal;
 

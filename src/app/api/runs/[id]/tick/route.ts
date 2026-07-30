@@ -8,13 +8,8 @@ import { advanceRun } from "@/lib/engine/runner";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-/*
- * A tick advances the run for up to BUDGET_MS (40s) before handing control back
- * to the browser. Vercel defaults a route handler to 10s, which would kill a
- * long tick mid-step and answer 504 — the engine would recover on the next tick,
- * but every slow run would look broken. 60s is the Hobby-plan ceiling and sits
- * above the 40s budget with room for the failure writes.
- */
+// A tick drives the run for up to 40s, but Vercel defaults a handler to 10s and would
+// answer 504 mid-step. 60s is the Hobby ceiling and clears the budget.
 export const maxDuration = 60;
 
 /**
