@@ -424,13 +424,18 @@ async function drive(deps: RunnerDeps, runId: string): Promise<RunRecord> {
       continue;
     }
 
+    // Continue this step's attempt numbering rather than restarting at 1. A
+    // step that failed and is being re-driven by resumeRun already has an
+    // attempt 1 on record, and (runId, stepId, attempt) is unique in the
+    // schema — restarting the count makes the resume path a constraint
+    // violation, not merely a mislabelled row.
     const { nextCursor, failed } = await executeStep(
       deps,
       run,
       version,
       step,
       ctx,
-      1,
+      (previous?.attempt ?? 0) + 1,
     );
 
     if (failed) {

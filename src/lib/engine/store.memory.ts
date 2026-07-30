@@ -119,9 +119,27 @@ export class MemoryRunStore implements RunStore {
     return this.steps.filter((s) => s.runId === runId).map((s) => ({ ...s }));
   }
 
+  /**
+   * Mirrors `@@unique([runId, stepId, attempt])` in prisma/schema.prisma. The
+   * in-memory store is what every engine test runs against, so a permissive
+   * insert here would let an attempt-numbering bug pass the whole suite and
+   * then fail with P2002 in production. Fail here exactly where Postgres does.
+   */
   async createStepExecution(
     input: CreateStepExecutionInput,
   ): Promise<StepExecutionRecord> {
+    const clash = this.steps.some(
+      (s) =>
+        s.runId === input.runId &&
+        s.stepId === input.stepId &&
+        s.attempt === input.attempt,
+    );
+    if (clash) {
+      throw new ConflictError(
+        `Step execution already exists for run ${input.runId} step ${input.stepId} attempt ${input.attempt}`,
+      );
+    }
+
     const record: StepExecutionRecord = {
       id: nextId("step"),
       runId: input.runId,

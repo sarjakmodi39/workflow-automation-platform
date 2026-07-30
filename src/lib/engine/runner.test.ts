@@ -331,6 +331,11 @@ describe("cancel and resume", () => {
     expect(classify).toHaveLength(2);
     expect(classify.at(-1)?.status).toBe("SUCCEEDED");
 
+    // Attempt numbering continues across the resume. (runId, stepId, attempt)
+    // is unique in the schema, so restarting the count at 1 here is a P2002
+    // against Postgres rather than a cosmetic mislabelling.
+    expect(classify.map((s) => s.attempt)).toEqual([1, 2]);
+
     const audit = await store.listAudit(run.id);
     expect(audit.some((e) => e.type === "RUN_RESUMED")).toBe(true);
   });
