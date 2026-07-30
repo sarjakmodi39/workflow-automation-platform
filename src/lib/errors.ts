@@ -56,8 +56,14 @@ export class RateLimitError extends AppError {
 }
 
 export class ProviderError extends AppError {
-  constructor(provider: string, message: string) {
-    super("PROVIDER_ERROR", `${provider}: ${message}`, true, { provider });
+  /**
+   * Defaults to retryable, which covers the common case (5xx, transport fault,
+   * unparseable model output). Pass `false` for a fault the request itself
+   * carries — a rejected key or a malformed body — where a second identical
+   * attempt cannot do better and only spends the run's LLM call budget.
+   */
+  constructor(provider: string, message: string, retryable = true) {
+    super("PROVIDER_ERROR", `${provider}: ${message}`, retryable, { provider });
   }
 }
 

@@ -11,8 +11,13 @@ export interface LlmRequest {
 export interface LlmResponse<T = unknown> {
   data: T;
   raw: string;
-  inputTokens: number;
-  outputTokens: number;
+  /**
+   * `null` when the provider did not report usage. Matches the nullability of
+   * `LlmCall.inputTokens` / `outputTokens`, so an absent count is recorded as
+   * absent rather than as a fabricated zero.
+   */
+  inputTokens: number | null;
+  outputTokens: number | null;
 }
 
 export interface LlmProvider {

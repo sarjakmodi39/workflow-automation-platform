@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type { RunnerDeps } from "@/lib/engine/runner";
 import { prismaRunStore } from "@/lib/engine/store.prisma";
+import { GeminiProvider } from "@/lib/llm/gemini";
 import { MockLlmProvider } from "@/lib/llm/mock";
+import { OpenRouterProvider } from "@/lib/llm/openrouter";
 import type { LlmProvider } from "@/lib/llm/types";
 
 /**
@@ -69,18 +71,31 @@ function offlineProvider(): LlmProvider {
 }
 
 /**
- * TASK 13 FILLS THIS IN. The Gemini and OpenRouter providers do not exist yet,
- * so there is currently no real provider to return and this is the *only*
- * function Task 13 needs to touch in this file.
+ * The configured real providers, ordered so `preferred` comes first.
  *
- * What it must become: construct `GeminiProvider` when GEMINI_API_KEY is set
- * and `OpenRouterProvider` when OPENROUTER_API_KEY is set, ordered so that
- * `preferred` comes first — `callLlm` tries the chain in order and the first
- * success wins, so the ordering *is* the fallback policy.
+ * `callLlm` tries the chain in order and the first success wins, so this
+ * ordering *is* the fallback policy. A provider is only included when its key
+ * is present: an unkeyed provider would fail every call with "not set", which
+ * would spend a chain position and an `LlmCall` ERROR row to learn nothing.
+ *
+ * Returns `[]` when neither key is set, which is what makes the offline mock
+ * fallback in `buildProviders` reachable.
  */
 function realProviders(preferred: string): LlmProvider[] {
-  void preferred;
-  return [];
+  const chain: LlmProvider[] = [];
+  if ((process.env.GEMINI_API_KEY ?? "").trim() !== "") {
+    chain.push(new GeminiProvider());
+  }
+  if ((process.env.OPENROUTER_API_KEY ?? "").trim() !== "") {
+    chain.push(new OpenRouterProvider());
+  }
+  // A `preferred` naming neither provider leaves the default order untouched
+  // rather than emptying the chain — a typo in LLM_PROVIDER must not silently
+  // demote a working setup to the mock.
+  return [
+    ...chain.filter((p) => p.name === preferred),
+    ...chain.filter((p) => p.name !== preferred),
+  ];
 }
 
 let warnedAboutFallback = false;
