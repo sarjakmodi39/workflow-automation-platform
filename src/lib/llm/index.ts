@@ -39,22 +39,9 @@ export async function callLlm<T = unknown>(
 
   for (const provider of deps.providers) {
     const startedAt = Date.now();
+    let result: Awaited<ReturnType<LlmProvider["complete"]>> | undefined;
     try {
-      const result = await provider.complete<T>(req);
-      await deps.store.recordLlmCall({
-        runId: deps.runId,
-        stepExecutionId: deps.stepExecutionId,
-        provider: provider.name,
-        model: provider.model,
-        prompt: `${req.system}\n---\n${req.user}`,
-        response: result.raw,
-        inputTokens: result.inputTokens,
-        outputTokens: result.outputTokens,
-        latencyMs: Date.now() - startedAt,
-        status: "SUCCESS",
-        error: null,
-      });
-      return result.data;
+      result = await provider.complete<T>(req);
     } catch (e) {
       lastError = e;
       await deps.store.recordLlmCall({
@@ -70,7 +57,27 @@ export async function callLlm<T = unknown>(
         status: "ERROR",
         error: toErrorMessage(e),
       });
+      continue;
     }
+
+    // Deliberately outside the try above: if the store fails while recording a
+    // successful completion, that is a persistence fault, not a provider fault.
+    // Logging it as an ERROR for this provider would misreport a call that did
+    // succeed and would silently discard result.data. Let it propagate as itself.
+    await deps.store.recordLlmCall({
+      runId: deps.runId,
+      stepExecutionId: deps.stepExecutionId,
+      provider: provider.name,
+      model: provider.model,
+      prompt: `${req.system}\n---\n${req.user}`,
+      response: result.raw,
+      inputTokens: result.inputTokens,
+      outputTokens: result.outputTokens,
+      latencyMs: Date.now() - startedAt,
+      status: "SUCCESS",
+      error: null,
+    });
+    return result.data as T;
   }
 
   throw lastError;

@@ -116,6 +116,41 @@ describe("callLlm", () => {
     expect(calls.every((c) => c.status === "ERROR")).toBe(true);
   });
 
+  it("propagates a store failure on the success path instead of blaming the provider", async () => {
+    const { store, runId } = await setup();
+    const provider = new MockLlmProvider("gemini");
+    provider.setDefault({ amount: 5200 });
+
+    const boom = new Error("db unreachable");
+    const failingStore = {
+      ...store,
+      countLlmCalls: store.countLlmCalls.bind(store),
+      recordLlmCall: async () => {
+        throw boom;
+      },
+    } as unknown as typeof store;
+
+    const fallback = new MockLlmProvider("openrouter");
+
+    // The provider succeeded. A persistence fault must surface as itself rather
+    // than being caught, logged as a provider ERROR, and retried on a fallback.
+    await expect(
+      callLlm(
+        {
+          store: failingStore,
+          runId,
+          stepExecutionId: null,
+          providers: [provider, fallback],
+          maxCalls: 10,
+        },
+        REQ,
+      ),
+    ).rejects.toBe(boom);
+
+    expect(provider.recordedCalls()).toHaveLength(1);
+    expect(fallback.recordedCalls()).toHaveLength(0);
+  });
+
   it("refuses to exceed the per-run call budget", async () => {
     const { store, runId } = await setup();
     const provider = new MockLlmProvider("gemini");
