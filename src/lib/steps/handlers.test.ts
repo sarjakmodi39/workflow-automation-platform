@@ -251,6 +251,49 @@ describe("mock_external_action handler", () => {
     expect(b.duplicatePrevented).toBe(true);
     expect(b.actionId).toBe(a.actionId);
   });
+
+  it("returns the stored response, not a recomputed one, on a duplicate", async () => {
+    // actionId derives from the idempotency key alone, so it is identical
+    // whether read back from the ledger or recomputed — it cannot distinguish
+    // the two. An advancing clock can: the duplicate must report the moment the
+    // ORIGINAL write happened, which is only available from the stored row.
+    const deps = await makeDeps({ steps: { extract: { amount: 100 } } });
+    let tick = 0;
+    const clock = ["2026-07-29T00:00:00.000Z", "2026-07-29T09:30:00.000Z"];
+    deps.now = () => new Date(clock[Math.min(tick++, clock.length - 1)]);
+
+    const step: StepDefinition = {
+      id: "post",
+      type: "mock_external_action",
+      name: "Post",
+      config: { action: "post_invoice", payload: { amount: "$.steps.extract.amount" } },
+    };
+    const first = await HANDLERS.mock_external_action(step, deps);
+    const second = await HANDLERS.mock_external_action(step, deps);
+
+    const a = first.output as { submittedAt: string };
+    const b = second.output as { submittedAt: string; duplicatePrevented: boolean };
+
+    expect(a.submittedAt).toBe(clock[0]);
+    expect(b.duplicatePrevented).toBe(true);
+    expect(b.submittedAt).toBe(clock[0]);
+    expect(b.submittedAt).not.toBe(clock[1]);
+  });
+});
+
+describe("human_approval handler", () => {
+  it("refuses to run, because the runner intercepts approval gates", async () => {
+    const deps = await makeDeps();
+    const step: StepDefinition = {
+      id: "gate",
+      type: "human_approval",
+      name: "Approve",
+      config: {},
+    };
+    await expect(HANDLERS.human_approval(step, deps)).rejects.toThrow(
+      /handled by the runner/i,
+    );
+  });
 });
 
 describe("final_report handler", () => {
@@ -284,5 +327,47 @@ describe("buildIdempotencyKey", () => {
     const a = buildIdempotencyKey("run1", "post", "act", { x: 1, y: 2 });
     const b = buildIdempotencyKey("run1", "post", "act", { y: 2, x: 1 });
     expect(a).toBe(b);
+  });
+
+  it("sorts keys at every depth, not just the top level", () => {
+    const a = buildIdempotencyKey("run1", "post", "act", { o: { x: 1, y: 2 } });
+    const b = buildIdempotencyKey("run1", "post", "act", { o: { y: 2, x: 1 } });
+    expect(a).toBe(b);
+  });
+
+  it("respects array order, which is semantic", () => {
+    const a = buildIdempotencyKey("run1", "post", "act", { lines: [1, 2] });
+    const b = buildIdempotencyKey("run1", "post", "act", { lines: [2, 1] });
+    expect(a).not.toBe(b);
+  });
+
+  it("separates undefined from null so an unset path is not a duplicate write", () => {
+    // JSON.stringify renders both as `null`. If the hash did too, a payload
+    // whose upstream path was unset would collide with one carrying an explicit
+    // null, and the ledger would swallow the second write as a duplicate.
+    const undef = buildIdempotencyKey("run1", "post", "act", { note: undefined });
+    const nul = buildIdempotencyKey("run1", "post", "act", { note: null });
+    expect(undef).not.toBe(nul);
+  });
+
+  it("separates non-finite numbers from null and from each other", () => {
+    const key = (v: unknown) => buildIdempotencyKey("r", "s", "a", { v });
+    const distinct = new Set([
+      key(null),
+      key(NaN),
+      key(Infinity),
+      key(-Infinity),
+      key(0),
+    ]);
+    expect(distinct.size).toBe(5);
+  });
+
+  it("does not emit control characters, which Postgres text columns reject", () => {
+    const key = buildIdempotencyKey("run1", "post", "act", {
+      a: undefined,
+      b: NaN,
+      c: null,
+    });
+    expect(key).toMatch(/^[0-9a-f]{48}$/);
   });
 });

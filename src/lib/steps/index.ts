@@ -90,8 +90,28 @@ function assertFields(
   return out;
 }
 
-/** Deterministic, order-insensitive JSON stringify for hashing. */
+/**
+ * Deterministic, order-insensitive JSON stringify for hashing.
+ *
+ * `JSON.stringify` flattens `undefined`, `NaN` and the infinities all to the
+ * literal `null`. That is not acceptable here: a payload whose field resolved
+ * to `undefined` (an unset upstream path) would hash to the same idempotency
+ * key as one where the field is an explicit `null`, and the ledger would then
+ * suppress the second, genuinely different write as a duplicate.
+ *
+ * Those four values get bare tokens instead. Bare tokens are unambiguous
+ * because every string goes through `JSON.stringify` and therefore always
+ * arrives quoted - the string "undefined" encodes as `"undefined"`, never as
+ * `undefined` - and no finite number encodes as a non-numeric token. The
+ * tokens stay printable ASCII deliberately: these strings also end up in LLM
+ * prompts and in Postgres `text` columns, and Postgres rejects 0x00.
+ */
 function stableStringify(value: unknown): string {
+  if (value === undefined) return "undefined";
+  if (typeof value === "number" && !Number.isFinite(value)) {
+    if (Number.isNaN(value)) return "NaN";
+    return value > 0 ? "Infinity" : "-Infinity";
+  }
   if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
   if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
   const keys = Object.keys(value as Record<string, unknown>).sort();
@@ -269,12 +289,17 @@ const mockExternalAction: StepHandler = async (step, deps) => {
     });
   }
 
-  const stored = inserted.record.response as { ref: string };
+  // Read the response back off the ledger row rather than returning the one
+  // just computed. On a duplicate the row is the ORIGINAL write, so the caller
+  // is told when the effect actually happened instead of being handed a fresh
+  // timestamp for an action that was never re-submitted.
+  const stored = inserted.record.response as { ref: string; submittedAt: string };
 
   return {
     output: {
       actionId: stored.ref,
       status: "SUBMITTED",
+      submittedAt: stored.submittedAt,
       duplicatePrevented: !inserted.created,
     },
     explanation: { idempotencyKey: key, action },
