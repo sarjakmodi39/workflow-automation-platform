@@ -606,9 +606,19 @@ export function RunView({ runId }: { runId: string }) {
       ) : null}
 
       {confirmation ? (
+        // Toned by the state the run landed in, not by the request succeeding. A green
+        // banner reading "the run is now FAILED" says the opposite of what it means.
         <p
           role="status"
-          className="mt-4 rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900"
+          className={`mt-4 rounded-lg border p-3 text-sm ${
+            data.run.status === "FAILED"
+              ? "border-rose-300 bg-rose-50 text-rose-900"
+              : data.run.status === "CANCELLED"
+                ? "border-slate-300 bg-slate-100 text-slate-800"
+                : data.run.status === "AWAITING_APPROVAL"
+                  ? "border-amber-300 bg-amber-50 text-amber-900"
+                  : "border-emerald-300 bg-emerald-50 text-emerald-900"
+          }`}
         >
           {confirmation}
         </p>

@@ -63,10 +63,16 @@ function kindMatches(value: unknown, kind: FieldKind): boolean {
   }
 }
 
+/**
+ * `retryable` is the caller's to declare, and it is not cosmetic: it decides whether the
+ * engine burns another attempt. Model output is stochastic and worth re-asking; run input
+ * is fixed for the life of the run, so retrying it can only fail identically forever.
+ */
 function assertFields(
   source: Record<string, unknown>,
   fields: FieldSpec[],
   what: string,
+  retryable: boolean,
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const field of fields) {
@@ -74,14 +80,14 @@ function assertFields(
     if (value === undefined || value === null) {
       throw new StepExecutionError(
         `${what} is missing required field "${field.name}".`,
-        true,
+        retryable,
         { field: field.name },
       );
     }
     if (!kindMatches(value, field.kind)) {
       throw new StepExecutionError(
         `${what} field "${field.name}" should be a ${field.kind} but was ${typeof value}.`,
-        true,
+        retryable,
         { field: field.name, expected: field.kind },
       );
     }
@@ -146,7 +152,9 @@ function resolveDeep(value: unknown, ctx: ExecutionContext): unknown {
 const structuredInput: StepHandler = async (step, deps) => {
   const fields = fieldsOf(step.config);
   const input = (deps.ctx.input ?? {}) as Record<string, unknown>;
-  return { output: assertFields(input, fields, "Run input") };
+  // Not retryable: the run's input is fixed at creation, so a second attempt reads the
+  // same object and fails the same way. Retrying is a slower route to the same answer.
+  return { output: assertFields(input, fields, "Run input", false) };
 };
 
 const documentRetrieval: StepHandler = async (step, deps) => {
@@ -184,7 +192,8 @@ const aiExtraction: StepHandler = async (step, deps) => {
     },
   );
 
-  return { output: assertFields(data ?? {}, fields, "Model output") };
+  // Retryable, unlike run input: the model may return the missing field next time.
+  return { output: assertFields(data ?? {}, fields, "Model output", true) };
 };
 
 const aiClassification: StepHandler = async (step, deps) => {

@@ -70,6 +70,24 @@ describe("structured_input handler", () => {
     };
     await expect(HANDLERS.structured_input(step, deps)).rejects.toThrow(/number/);
   });
+
+  it("marks a bad run input as NOT retryable, because the input never changes", async () => {
+    const deps = await makeDeps({ input: { invoiceId: "INV-1" } });
+    const step: StepDefinition = {
+      id: "intake",
+      type: "structured_input",
+      name: "Intake",
+      config: { fields: [{ name: "vendor", kind: "string" }] },
+    };
+
+    // `retryable` is what the runner consults before spending another attempt. Run input
+    // is fixed at creation, so a retryable error here produces a column of identical
+    // failures — which is exactly what it did before this was fixed.
+    await expect(HANDLERS.structured_input(step, deps)).rejects.toMatchObject({
+      code: "STEP_EXECUTION_ERROR",
+      retryable: false,
+    });
+  });
 });
 
 describe("document_retrieval handler", () => {
