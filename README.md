@@ -23,7 +23,7 @@ npm install
 
 cp .env.example .env      # then fill in DATABASE_URL and GEMINI_API_KEY
 npx prisma db push        # create the schema
-npm run db:seed           # seed the demo workflow and one completed run
+npm run db:seed           # seed three demo workflows (idempotent)
 
 npm run dev               # http://localhost:3000
 ```
@@ -37,7 +37,19 @@ required to boot; set `LLM_PROVIDER=mock` to run the AI steps without any provid
 | `npm run build` | `prisma generate` then `next build` |
 | `npm test` | Full Vitest suite — no database, no network |
 | `npm run db:push` | Push `schema.prisma` to the database |
-| `npm run db:seed` | Seed the demo workflow, corpus, and a completed run |
+| `npm run db:seed` | Seed the three demo workflows. Idempotent — safe to re-run |
+
+### What the seed creates
+
+| Workflow | Why it is there |
+|---|---|
+| **Vendor Onboarding Review** | Start here. No approval gate and no external write, so it runs to completion unattended. |
+| **Invoice Approval and Payment** | Two versions differing only in approval threshold (5000 vs 1000 USD), so version pinning is observable on identical input. Gates on amount **or** on an AI vendor-risk classification. |
+| **Permission Enforcement Demo** | Deliberately under-granted, and fails at `post_payment` by design. The API refuses to save a version like this, so seeding it directly is the only way to exercise the runner's execution-time permission check. |
+
+Each workflow's sample input is printed when the seed runs. No runs are seeded: a run is the
+engine's own output, and writing one row by row would put an audit trail in the database
+describing events that never happened.
 
 ## Architecture
 
@@ -259,8 +271,10 @@ UI tests written for this document's own feature set.
 
 1. **Single-tenant, no user authentication.** Permissions are enforced at the step level as
    specified, but there is no notion of *who* is approving. `Approval.reason` is free text.
-2. **Free-tier LLM providers.** Sustained load can hit rate limits. Mitigated by the
-   fallback chain, retry, and a seeded completed run that needs no live call to demonstrate.
+2. **Free-tier LLM providers.** Sustained load can hit rate limits, and free-tier quotas are
+   both low and model-specific — the full `flash` alias allows only 20 requests per day, which
+   is why the default is `gemini-flash-lite-latest`. Mitigated by the fallback chain and
+   automatic retry; set `LLM_PROVIDER=mock` to demonstrate the engine with no provider at all.
 3. **Sequential execution only.** No parallel branches.
 4. **Keyword retrieval, not semantic search.** The corpus is small and scored by keyword
    overlap; there are no embeddings.

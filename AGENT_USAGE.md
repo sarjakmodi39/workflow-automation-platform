@@ -215,13 +215,39 @@ stayed in the server log.
 string and asserted on — including that a 409 and a 500 do not produce the same text, and
 that model-influenced content is escaped rather than interpreted as markup.
 
-### What remains unverified
+### What the live run changed
 
-Stated plainly, because the alternative is implying otherwise:
+An earlier draft of this document ended by stating plainly that nothing had yet run against a
+live database or a real provider — that the Gemini call, the approval flow and the
+duplicate-write prevention were *expected* to work and had never been *observed* working, and
+that those are different claims.
 
-At the time of writing, **no part of this system has run against a live database or a real
-LLM provider.** All 226 tests pass against an in-memory store and a mock provider. The real
-Gemini call, the real approval flow, and the real duplicate-write prevention are expected to
-work and have never been observed working. Those are different claims. The deployment step
-exists precisely to close that gap, and the live URL at the top of the README is the evidence
-that it was closed.
+They were different claims, and the gap was worth stating, because closing it found four
+defects that 238 passing tests could not:
+
+- **The default model 404'd.** `gemini-2.5-flash` had become "no longer available to new
+  users" — a non-retryable error, so every AI step failed outright. No mock can catch a model
+  being retired.
+- **Its replacement was a thinking model.** `gemini-flash-latest` spent 179 thinking tokens to
+  produce 36 output tokens, with latency swinging between 10s and 25s against a 15s client
+  timeout, and a free tier of 20 requests per day. Both facts came from reading real response
+  headers and quota errors, not documentation.
+- **Every route would have timed out in production.** No handler declared `maxDuration`, so
+  Vercel's 10s default would have killed a tick with a 40s budget. This works locally and
+  fails only once deployed, which is the worst place to find it.
+- **A branch condition could never fire.** The classifier was reading the policy documents
+  rather than the vendor profile, so it returned `low_risk` for a vendor the corpus rates high
+  risk. The tests asserted the workflow was *valid*; validity does not mean the branch is
+  reachable.
+
+What is now observed rather than assumed, against Neon and the real Gemini API: a run
+completing unattended; an approval gate halting a run and resuming on approval; a rejection
+leaving the run permanently `CANCELLED`, with `resume`, `retry` and a second approval all
+refused and zero external actions written; the execution-time permission check failing a step
+the API would never have allowed to be saved; two versions deciding differently on identical
+input; a transient provider fault producing an automatic retry and a recoverable `FAILED` run;
+and a simulated crash after an external write resuming to `duplicatePrevented: true` against
+the original ledger reference rather than issuing a second payment.
+
+The remaining honest gap: the application has not yet been exercised *as deployed*. Everything
+above ran against the production database from a local process.
