@@ -11,20 +11,31 @@ import { useApiResource } from "@/lib/useApiResource";
 
 /** What each seeded workflow is for, so a reviewer opening this page cold knows which one
  *  to run first instead of picking at random. Keyed by the seed's fixed ids. */
-const WORKFLOW_HINTS: Record<string, { badge: string; hint: string }> = {
+const WORKFLOW_HINTS: Record<string, { badge: string; hint: string; order: number }> = {
   seed_vendor_review: {
     badge: "Start here",
     hint: "Runs to completion with no human input — the quickest way to see the engine work.",
+    order: 0,
   },
   seed_invoice_approval: {
     badge: "Approval gate",
     hint: "Stops for a human. Two versions with different thresholds, so the same input can decide differently.",
+    order: 1,
   },
   seed_permission_demo: {
     badge: "Fails by design",
     hint: "Under-granted on purpose: it stops at the external write with PERMISSION_DENIED.",
+    order: 2,
   },
 };
+
+/** The API orders by creation time, but the seed writes all three in the same second, so
+ *  that order is arbitrary — and it put the red "fails by design" workflow first. */
+const UNGUIDED_ORDER = 99;
+
+function displayOrder(id: string): number {
+  return WORKFLOW_HINTS[id]?.order ?? UNGUIDED_ORDER;
+}
 
 /** Client-side because the three states below — in flight, empty, failed — are only
  *  distinguishable if the fetch happens where the reader can see it. */
@@ -56,7 +67,9 @@ export function WorkflowList() {
         </EmptyState>
       ) : (
         <ul className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
-          {resource.data.workflows.map((workflow) => {
+          {[...resource.data.workflows]
+            .sort((a, b) => displayOrder(a.id) - displayOrder(b.id))
+            .map((workflow) => {
             const latest = workflow.versions[0];
             const guide = WORKFLOW_HINTS[workflow.id];
             return (
